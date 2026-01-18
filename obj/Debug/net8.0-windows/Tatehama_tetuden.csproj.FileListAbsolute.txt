@@ -21,3 +21,4 @@ C:\Users\user\source\repos\Tatehama_tetuden\obj\Debug\net8.0-windows\refint\Tate
 C:\Users\user\source\repos\Tatehama_tetuden\obj\Debug\net8.0-windows\Tatehama_tetuden.pdb
 C:\Users\user\source\repos\Tatehama_tetuden\obj\Debug\net8.0-windows\Tatehama_tetuden.genruntimeconfig.cache
 C:\Users\user\source\repos\Tatehama_tetuden\obj\Debug\net8.0-windows\ref\Tatehama_tetuden.dll
+C:\Users\user\source\repos\Tatehama_tetuden\obj\Debug\net8.0-windows\Tatehama_tetuden.sourcelink.json
