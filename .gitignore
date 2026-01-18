@@ -1,0 +1,12 @@
+# Visual Studio の一時ファイル・キャッシュ（最重要）
+.vs/
+.vscode/
+
+# ユーザー固有の設定ファイル
+*.user
+*.userosscache
+*.sln.docstates
+
+# その他の一時ファイル
+*.log
+*.suo

@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Tatehama_tetuden")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+983870d7bc7474fda03d4587fd3949964efac9c8")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c1af1f0bf64928de90bf041f88cd9f388fdaf58e")]
 [assembly: System.Reflection.AssemblyProductAttribute("Tatehama_tetuden")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Tatehama_tetuden")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
