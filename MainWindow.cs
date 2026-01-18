@@ -10,10 +10,11 @@ using System.Windows.Threading;
 using System.Windows.Media.Animation; // アニメーション用
 using CommunityToolkit.WinUI.Notifications;
 using System.IO;
-using System.Threading.Tasks;
+using System.Threading.Tasks; // 非同期処理用
 
 namespace RailwayPhone
 {
+    // ステータス定義
     public enum PhoneStatus
     {
         Idle,       // 待機
@@ -25,7 +26,12 @@ namespace RailwayPhone
 
     public class MainWindow : Window
     {
-        // データ
+        // --- 通信設定 ---
+        private CommunicationManager _commManager;
+        private const string SERVER_IP = "127.0.0.1"; // サーバー(自分のPC)のIP
+        private const int SERVER_PORT = 8888;
+
+        // --- データ ---
         private DeviceInfo _currentInputDevice;
         private DeviceInfo _currentOutputDevice;
         private float _currentInputVol = 1.0f;
@@ -36,7 +42,7 @@ namespace RailwayPhone
 
         private SoundManager _soundManager;
 
-        // UIコントロール
+        // --- UIコントロール ---
         private ListView _phoneBookList;
         private TextBlock _selfStationDisplay;
 
@@ -60,11 +66,11 @@ namespace RailwayPhone
         private TextBlock _talkingTimerText;   // Talking (タイマー)
         private Button _holdBtn;
 
-        // アニメーション用パーツ (各画面に配置)
-        private ScaleTransform _incomingPulse; // 着信用
-        private ScaleTransform _outgoingPulse; // 発信用
-        private ScaleTransform _talkingPulse;  // 通話用
-        private Ellipse _talkingIconBg;        // 通話アイコン背景(色変更用)
+        // アニメーション用パーツ
+        private ScaleTransform _incomingPulse;
+        private ScaleTransform _outgoingPulse;
+        private ScaleTransform _talkingPulse;
+        private Ellipse _talkingIconBg;
 
         // ロジック変数
         private DispatcherTimer _callTimer;
@@ -84,22 +90,67 @@ namespace RailwayPhone
             if (station == null) station = new PhoneBookEntry { Name = "設定なし", Number = "000" };
             _currentStation = station;
 
-            Title = $"館浜電鉄鉄道電話 - [{_currentStation.Name}]";
+            Title = $"模擬鉄 指令電話端末 - [{_currentStation.Name}]";
             Width = 950; Height = 650;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = _bgColor;
 
+            // 音響初期化
             _soundManager = new SoundManager();
 
+            // 画面構築
             InitializeComponents();
-            ReportStatusToServer(PhoneStatus.Idle);
 
+            // ★通信機能の初期化
+            _commManager = new CommunicationManager();
+            _commManager.MessageReceived += OnMessageReceived;
+
+            // サーバーへ接続開始
+            ConnectToServer();
+
+            // 終了時の後始末
             Closing += (s, e) => {
                 if (_soundManager != null) _soundManager.Dispose();
+                if (_commManager != null) _commManager.Dispose(); // 通信も切断
                 ToastNotificationManagerCompat.Uninstall();
             };
         }
 
+        // ★サーバー接続処理
+        private async void ConnectToServer()
+        {
+            // タイトルに接続中を表示
+            Title += " [接続試行中...]";
+
+            bool success = await _commManager.Connect(SERVER_IP, SERVER_PORT);
+
+            // 元のタイトルに戻す
+            Title = $"模擬鉄 指令電話端末 - [{_currentStation.Name}]";
+
+            if (success)
+            {
+                // 接続成功したらログイン情報を送る
+                _commManager.SendLogin(_currentStation.Number);
+                Title += " [オンライン]";
+            }
+            else
+            {
+                Title += " [オフライン - サーバー未検出]";
+            }
+        }
+
+        // ★メッセージ受信時の処理
+        private void OnMessageReceived(string json)
+        {
+            // UIスレッドで実行
+            Dispatcher.Invoke(() =>
+            {
+                System.Diagnostics.Debug.WriteLine($"[受信] {json}");
+                // ここに将来的に「着信」などの分岐処理を書きます
+            });
+        }
+
+        // ステータス変更と送信
         private void ChangeStatus(PhoneStatus newStatus)
         {
             CurrentStatus = newStatus;
@@ -108,8 +159,19 @@ namespace RailwayPhone
 
         private void ReportStatusToServer(PhoneStatus status)
         {
-            string json = $@"{{ ""status"": ""{status}"", ""timestamp"": ""{DateTime.Now}"" }}";
-            System.Diagnostics.Debug.WriteLine($"[API] {json}");
+            // サーバーに送るデータを作成
+            var data = new
+            {
+                type = "STATUS_CHANGE",
+                status = status.ToString(),
+                number = _currentStation.Number
+            };
+
+            // 接続されていれば送信
+            _commManager.SendMessage(data);
+
+            // デバッグ出力
+            System.Diagnostics.Debug.WriteLine($"[API] Status changed to {status}");
         }
 
         private void InitializeComponents()
@@ -230,21 +292,16 @@ namespace RailwayPhone
             return panel;
         }
 
-        // 2. 着信画面 (アイコン追加)
+        // 2. 着信画面
         private UIElement CreateIncomingView()
         {
             var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-
             panel.Children.Add(new TextBlock { Text = "着信中...", FontSize = 16, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) });
-
-            // ★パルスアイコン
             panel.Children.Add(CreatePulsingIcon(_primaryColor, out _incomingPulse));
-
             _incomingNameText = new TextBlock { Text = "---", FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) };
             panel.Children.Add(_incomingNameText);
             _incomingNumberText = new TextBlock { Text = "---", FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) };
             panel.Children.Add(_incomingNumberText);
-
             var btnGrid = new Grid { Width = 300 };
             btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) }); btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var answerBtn = new Button { Content = "📞 応答", Height = 60, Background = _acceptColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var aStyle = new Style(typeof(Border)); aStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); answerBtn.Resources.Add(typeof(Border), aStyle);
@@ -255,45 +312,35 @@ namespace RailwayPhone
             return panel;
         }
 
-        // 3. 発信画面 (アイコン追加)
+        // 3. 発信画面
         private UIElement CreateOutgoingView()
         {
             var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-
             panel.Children.Add(new TextBlock { Text = "呼び出し中...", FontSize = 16, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) });
-
-            // ★パルスアイコン
             panel.Children.Add(CreatePulsingIcon(_primaryColor, out _outgoingPulse));
-
             _outgoingNameText = new TextBlock { Text = "---", FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) };
             panel.Children.Add(_outgoingNameText);
             _outgoingNumberText = new TextBlock { Text = "---", FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) };
             panel.Children.Add(_outgoingNumberText);
-
             var cancelBtn = new Button { Content = "取 消", Width = 200, Height = 60, Background = _dangerColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var cStyle = new Style(typeof(Border)); cStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); cancelBtn.Resources.Add(typeof(Border), cStyle);
             cancelBtn.Click += (s, e) => EndCall();
             panel.Children.Add(cancelBtn);
             return panel;
         }
 
-        // 4. 通話画面 (アイコン追加)
+        // 4. 通話画面
         private UIElement CreateTalkingView()
         {
             var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-
             _talkingStatusText = new TextBlock { Text = "通話中", FontSize = 16, Foreground = _acceptColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10), FontWeight = FontWeights.Bold };
             panel.Children.Add(_talkingStatusText);
-
-            // ★パルスアイコン (緑) - 背景色を変えるためにGridを取得
             var iconGrid = CreatePulsingIcon(_acceptColor, out _talkingPulse);
-            _talkingIconBg = iconGrid.Children.OfType<Ellipse>().FirstOrDefault(); // 後で色を変えるため保持
+            _talkingIconBg = iconGrid.Children.OfType<Ellipse>().FirstOrDefault();
             panel.Children.Add(iconGrid);
-
             _talkingNameText = new TextBlock { Text = "---", FontSize = 28, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 20) };
             panel.Children.Add(_talkingNameText);
             _talkingTimerText = new TextBlock { Text = "00:00", FontSize = 48, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.DarkSlateGray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 40) };
             panel.Children.Add(_talkingTimerText);
-
             var btnGrid = new Grid { Width = 300 };
             btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) }); btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             _holdBtn = new Button { Content = "保 留", Height = 60, Background = Brushes.Gray, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var hStyle = new Style(typeof(Border)); hStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); _holdBtn.Resources.Add(typeof(Border), hStyle);
@@ -340,7 +387,7 @@ namespace RailwayPhone
                 _incomingNameText.Text = caller.Name;
                 if (_incomingNumberText != null) _incomingNumberText.Text = caller.Number;
 
-                // アニメ開始 (速め: 0.5秒)
+                // アニメ開始
                 StartAnimation(_incomingPulse, 0.5);
 
                 if (_currentOutputDevice != null) _soundManager.SetOutputDevice(_currentOutputDevice.ID);
@@ -364,7 +411,7 @@ namespace RailwayPhone
             _outgoingNameText.Text = _statusNameText.Text;
             _outgoingNumberText.Text = _inputNumberBox.Text;
 
-            // アニメ開始 (速め: 0.8秒)
+            // アニメ開始
             StartAnimation(_outgoingPulse, 0.8);
 
             if (_currentOutputDevice != null) _soundManager.SetOutputDevice(_currentOutputDevice.ID);
@@ -394,7 +441,6 @@ namespace RailwayPhone
             _viewTalking.Visibility = Visibility.Visible;
             _isHolding = false;
 
-            // アニメ開始 (ゆったり: 1.2秒)
             StartAnimation(_talkingPulse, 1.2);
             UpdateHoldStatusUI();
 
@@ -435,7 +481,7 @@ namespace RailwayPhone
                 _talkingStatusText.Text = "保留中";
                 _talkingStatusText.Foreground = _holdColor;
                 if (_talkingIconBg != null) _talkingIconBg.Fill = _holdColor;
-                StopAnimation(_talkingPulse); // 保留中は動きを止める
+                StopAnimation(_talkingPulse);
             }
             else
             {
@@ -444,7 +490,7 @@ namespace RailwayPhone
                 _talkingStatusText.Text = "通話中";
                 _talkingStatusText.Foreground = _acceptColor;
                 if (_talkingIconBg != null) _talkingIconBg.Fill = _acceptColor;
-                StartAnimation(_talkingPulse, 1.2); // 再開で動き出す
+                StartAnimation(_talkingPulse, 1.2);
             }
         }
 
