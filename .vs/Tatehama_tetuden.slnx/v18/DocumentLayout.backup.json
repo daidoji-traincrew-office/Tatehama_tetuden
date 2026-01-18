@@ -7,12 +7,20 @@
       "RelativeMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|solutionrelative:mainwindow.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|c:\\users\\user\\source\\repos\\tatehama_tetuden\\phonebook.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|solutionrelative:phonebook.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|c:\\users\\user\\source\\repos\\tatehama_tetuden\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|c:\\users\\user\\source\\repos\\tatehama_tetuden\\propertywindow.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|solutionrelative:propertywindow.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|c:\\users\\user\\source\\repos\\tatehama_tetuden\\audiosettingwindow.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|solutionrelative:audiosettingwindow.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|c:\\users\\user\\source\\repos\\tatehama_tetuden\\stationselectionwindow.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|solutionrelative:stationselectionwindow.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|c:\\users\\user\\source\\repos\\tatehama_tetuden\\phonebook.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|solutionrelative:phonebook.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|c:\\users\\user\\source\\repos\\tatehama_tetuden\\deviceinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -21,10 +29,6 @@
     {
       "AbsoluteMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|c:\\users\\user\\source\\repos\\tatehama_tetuden\\tatehama_tetuden.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
       "RelativeMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|solutionrelative:tatehama_tetuden.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|c:\\users\\user\\source\\repos\\tatehama_tetuden\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{B9133470-491F-7D90-2FEF-2DD2C171F89D}|Tatehama_tetuden.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -38,33 +42,33 @@
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "PhoneBook.cs",
-              "DocumentMoniker": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\PhoneBook.cs",
-              "RelativeDocumentMoniker": "PhoneBook.cs",
-              "ToolTip": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\PhoneBook.cs",
-              "RelativeToolTip": "PhoneBook.cs",
-              "ViewState": "AgIAAAcAAAAAAAAAAAAwwC0AAAABAAAAAAAAAA==",
+              "DocumentIndex": 3,
+              "Title": "StationSelectionWindow.cs",
+              "DocumentMoniker": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\StationSelectionWindow.cs",
+              "RelativeDocumentMoniker": "StationSelectionWindow.cs",
+              "ToolTip": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\StationSelectionWindow.cs*",
+              "RelativeToolTip": "StationSelectionWindow.cs*",
+              "ViewState": "AgIAAEsAAAAAAAAAAAAgwGkAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-18T09:09:34.101Z",
+              "WhenOpened": "2026-01-18T09:57:23.677Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 2,
-              "Title": "PropertyWindow.cs",
-              "DocumentMoniker": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\PropertyWindow.cs",
-              "RelativeDocumentMoniker": "PropertyWindow.cs",
-              "ToolTip": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\PropertyWindow.cs",
-              "RelativeToolTip": "PropertyWindow.cs",
-              "ViewState": "AgIAAGEBAAAAAAAAAAAIwIcBAAABAAAAAAAAAA==",
+              "Title": "AudioSettingWindow.cs",
+              "DocumentMoniker": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\AudioSettingWindow.cs",
+              "RelativeDocumentMoniker": "AudioSettingWindow.cs",
+              "ToolTip": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\AudioSettingWindow.cs*",
+              "RelativeToolTip": "AudioSettingWindow.cs*",
+              "ViewState": "AgIAAKgAAAAAAAAAAAAgwMgAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-01-18T05:27:56.872Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 5,
               "Title": "DeviceInfo.cs",
               "DocumentMoniker": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\DeviceInfo.cs",
               "RelativeDocumentMoniker": "DeviceInfo.cs",
@@ -82,14 +86,14 @@
               "RelativeDocumentMoniker": "MainWindow.cs",
               "ToolTip": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\MainWindow.cs*",
               "RelativeToolTip": "MainWindow.cs*",
-              "ViewState": "AgIAAFUAAAAAAAAAAAAmwGIAAACNAAAAAAAAAA==",
+              "ViewState": "AgIAAKUAAAAAAAAAAAAgwL4AAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-01-18T05:28:24.628Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 6,
               "Title": "Tatehama_tetuden.csproj",
               "DocumentMoniker": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\Tatehama_tetuden.csproj",
               "RelativeDocumentMoniker": "Tatehama_tetuden.csproj",
@@ -101,15 +105,28 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 1,
               "Title": "Program.cs",
               "DocumentMoniker": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\Program.cs",
               "RelativeDocumentMoniker": "Program.cs",
-              "ToolTip": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\Program.cs",
-              "RelativeToolTip": "Program.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAADwvxAAAAABAAAAAAAAAA==",
+              "ToolTip": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\Program.cs*",
+              "RelativeToolTip": "Program.cs*",
+              "ViewState": "AgIAAAwAAAAAAAAAAAAgwCUAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-18T04:55:05.834Z"
+              "WhenOpened": "2026-01-18T04:55:05.834Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "PhoneBook.cs",
+              "DocumentMoniker": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\PhoneBook.cs",
+              "RelativeDocumentMoniker": "PhoneBook.cs",
+              "ToolTip": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\PhoneBook.cs",
+              "RelativeToolTip": "PhoneBook.cs",
+              "ViewState": "AgIAAAcAAAAAAAAAAAAwwC0AAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-18T09:09:34.101Z"
             }
           ]
         }
