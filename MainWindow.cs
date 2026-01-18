@@ -10,16 +10,17 @@ using System.Windows.Threading;
 using System.Windows.Media.Animation; // アニメーション用
 using CommunityToolkit.WinUI.Notifications;
 using System.IO;
-using System.Threading.Tasks; // 非同期処理用
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace RailwayPhone
 {
-    // ステータス定義
     public enum PhoneStatus
     {
         Idle,       // 待機
         Incoming,   // 着信
-        Outgoing,   // 発信(呼び出し中)
+        Outgoing,   // 発信
         Talking,    // 通話中
         Holding     // 保留中
     }
@@ -28,18 +29,20 @@ namespace RailwayPhone
     {
         // --- 通信設定 ---
         private CommunicationManager _commManager;
-        private const string SERVER_IP = "127.0.0.1"; // サーバー(自分のPC)のIP
+        private const string SERVER_IP = "127.0.0.1";
         private const int SERVER_PORT = 8888;
 
-        // --- データ ---
+        // --- デバイス設定 ---
         private DeviceInfo _currentInputDevice;
         private DeviceInfo _currentOutputDevice;
         private float _currentInputVol = 1.0f;
         private float _currentOutputVol = 1.0f;
+
+        // --- データ ---
         private PhoneBookEntry _currentStation;
+        private string _connectedTargetNumber;
 
         public PhoneStatus CurrentStatus { get; private set; } = PhoneStatus.Idle;
-
         private SoundManager _soundManager;
 
         // --- UIコントロール ---
@@ -54,16 +57,16 @@ namespace RailwayPhone
         private UIElement _viewTalking;
 
         // テキスト部品
-        private TextBlock _statusNameText;     // Keypad
-        private TextBox _inputNumberBox;       // Keypad
-        private TextBlock _incomingNameText;   // Incoming
-        private TextBlock _incomingNumberText; // Incoming
-        private TextBlock _outgoingNameText;   // Outgoing
-        private TextBlock _outgoingNumberText; // Outgoing
+        private TextBlock _statusNameText;
+        private TextBox _inputNumberBox;
+        private TextBlock _incomingNameText;
+        private TextBlock _incomingNumberText;
+        private TextBlock _outgoingNameText;
+        private TextBlock _outgoingNumberText;
 
-        private TextBlock _talkingStatusText;  // Talking (状態表示)
-        private TextBlock _talkingNameText;    // Talking (相手名)
-        private TextBlock _talkingTimerText;   // Talking (タイマー)
+        private TextBlock _talkingStatusText;
+        private TextBlock _talkingNameText;
+        private TextBlock _talkingTimerText;
         private Button _holdBtn;
 
         // アニメーション用パーツ
@@ -79,10 +82,10 @@ namespace RailwayPhone
         private Random _random = new Random();
 
         // カラー定義
-        private readonly Brush _primaryColor = new SolidColorBrush(Color.FromRgb(0, 120, 215)); // 青
-        private readonly Brush _dangerColor = new SolidColorBrush(Color.FromRgb(232, 17, 35));  // 赤
-        private readonly Brush _acceptColor = new SolidColorBrush(Color.FromRgb(30, 180, 50));  // 緑
-        private readonly Brush _holdColor = new SolidColorBrush(Color.FromRgb(255, 140, 0));    // オレンジ
+        private readonly Brush _primaryColor = new SolidColorBrush(Color.FromRgb(0, 120, 215));
+        private readonly Brush _dangerColor = new SolidColorBrush(Color.FromRgb(232, 17, 35));
+        private readonly Brush _acceptColor = new SolidColorBrush(Color.FromRgb(30, 180, 50));
+        private readonly Brush _holdColor = new SolidColorBrush(Color.FromRgb(255, 140, 0));
         private readonly Brush _bgColor = new SolidColorBrush(Color.FromRgb(240, 244, 248));
 
         public MainWindow(PhoneBookEntry station)
@@ -95,90 +98,263 @@ namespace RailwayPhone
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = _bgColor;
 
-            // 音響初期化
             _soundManager = new SoundManager();
 
-            // 画面構築
             InitializeComponents();
 
-            // ★通信機能の初期化
             _commManager = new CommunicationManager();
             _commManager.MessageReceived += OnMessageReceived;
-
-            // サーバーへ接続開始
             ConnectToServer();
 
-            // 終了時の後始末
             Closing += (s, e) => {
                 if (_soundManager != null) _soundManager.Dispose();
-                if (_commManager != null) _commManager.Dispose(); // 通信も切断
+                if (_commManager != null) _commManager.Dispose();
                 ToastNotificationManagerCompat.Uninstall();
             };
         }
 
-        // ★サーバー接続処理
+        // ★★★ 修正箇所: Dispatcher.Invokeを追加 ★★★
         private async void ConnectToServer()
         {
-            // タイトルに接続中を表示
-            Title += " [接続試行中...]";
+            Title += " [接続試行中...]"; // ここはOK
 
             bool success = await _commManager.Connect(SERVER_IP, SERVER_PORT);
 
-            // 元のタイトルに戻す
-            Title = $"模擬鉄 指令電話端末 - [{_currentStation.Name}]";
-
-            if (success)
-            {
-                // 接続成功したらログイン情報を送る
-                _commManager.SendLogin(_currentStation.Number);
-                Title += " [オンライン]";
-            }
-            else
-            {
-                Title += " [オフライン - サーバー未検出]";
-            }
-        }
-
-        // ★メッセージ受信時の処理
-        private void OnMessageReceived(string json)
-        {
-            // UIスレッドで実行
+            // awaitの後は別スレッドの可能性があるため、Dispatcher.InvokeでUIスレッドに戻す
             Dispatcher.Invoke(() =>
             {
-                System.Diagnostics.Debug.WriteLine($"[受信] {json}");
-                // ここに将来的に「着信」などの分岐処理を書きます
+                Title = $"模擬鉄 指令電話端末 - [{_currentStation.Name}]";
+
+                if (success)
+                {
+                    _commManager.SendLogin(_currentStation.Number);
+                    Title += " [オンライン]";
+                }
+                else
+                {
+                    Title += " [オフライン - サーバー未検出]";
+                }
             });
         }
 
-        // ステータス変更と送信
+        private void OnMessageReceived(string json)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    var data = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+                    if (data == null || !data.ContainsKey("type")) return;
+
+                    string type = data["type"];
+                    string fromNumber = data.ContainsKey("from") ? data["from"] : "";
+
+                    switch (type)
+                    {
+                        case "INCOMING":
+                            HandleRealIncomingCall(fromNumber);
+                            break;
+                        case "ANSWERED":
+                            HandleRealAnswered();
+                            break;
+                        case "HANGUP":
+                            EndCall(playStatusSound: true);
+                            break;
+                    }
+                }
+                catch { }
+            });
+        }
+
         private void ChangeStatus(PhoneStatus newStatus)
         {
             CurrentStatus = newStatus;
-            ReportStatusToServer(newStatus);
         }
 
-        private void ReportStatusToServer(PhoneStatus status)
+        private async void StartOutgoingCall()
         {
-            // サーバーに送るデータを作成
-            var data = new
+            string targetNum = _inputNumberBox.Text;
+            if (string.IsNullOrEmpty(targetNum)) return;
+
+            _connectedTargetNumber = targetNum;
+            ChangeStatus(PhoneStatus.Outgoing);
+
+            _viewKeypad.Visibility = Visibility.Collapsed;
+            _viewTalking.Visibility = Visibility.Collapsed;
+            _viewIncoming.Visibility = Visibility.Collapsed;
+            _viewOutgoing.Visibility = Visibility.Visible;
+
+            _outgoingNameText.Text = _statusNameText.Text;
+            _outgoingNumberText.Text = targetNum;
+
+            StartAnimation(_outgoingPulse, 0.8);
+
+            if (_currentOutputDevice != null) _soundManager.SetOutputDevice(_currentOutputDevice.ID);
+            _soundManager.Play(SoundManager.FILE_TORI);
+            await Task.Delay(800);
+
+            if (CurrentStatus == PhoneStatus.Outgoing)
             {
-                type = "STATUS_CHANGE",
-                status = status.ToString(),
-                number = _currentStation.Number
-            };
+                _commManager.SendCall(targetNum);
+                _soundManager.Play(SoundManager.FILE_YOBIDASHI, loop: true);
+            }
+        }
 
-            // 接続されていれば送信
-            _commManager.SendMessage(data);
+        private void HandleRealIncomingCall(string fromNumber)
+        {
+            if (CurrentStatus != PhoneStatus.Idle) return;
 
-            // デバッグ出力
-            System.Diagnostics.Debug.WriteLine($"[API] Status changed to {status}");
+            _connectedTargetNumber = fromNumber;
+            var caller = PhoneBook.Entries.FirstOrDefault(x => x.Number == fromNumber);
+            string callerName = caller != null ? caller.Name : "不明な発信者";
+
+            ChangeStatus(PhoneStatus.Incoming);
+
+            _viewKeypad.Visibility = Visibility.Collapsed;
+            _viewTalking.Visibility = Visibility.Collapsed;
+            _viewOutgoing.Visibility = Visibility.Collapsed;
+            _viewIncoming.Visibility = Visibility.Visible;
+
+            _incomingNameText.Text = callerName;
+            _incomingNumberText.Text = fromNumber;
+
+            StartAnimation(_incomingPulse, 0.5);
+
+            if (_currentOutputDevice != null) _soundManager.SetOutputDevice(_currentOutputDevice.ID);
+
+            if (fromNumber.StartsWith("1")) _soundManager.Play(SoundManager.FILE_YOBI2, loop: true);
+            else _soundManager.Play(SoundManager.FILE_YOBI1, loop: true);
+
+            new ToastContentBuilder().AddText("着信あり").AddText($"{callerName} ({fromNumber})").Show();
+        }
+
+        private void AnswerCall()
+        {
+            StopAnimation(_incomingPulse);
+            _soundManager.Stop();
+            _soundManager.Play(SoundManager.FILE_TORI);
+
+            _commManager.SendAnswer(_connectedTargetNumber);
+            GoToTalkingScreen(isOutgoing: false);
+        }
+
+        private void HandleRealAnswered()
+        {
+            if (CurrentStatus == PhoneStatus.Outgoing)
+            {
+                _soundManager.Stop();
+                GoToTalkingScreen(isOutgoing: true);
+            }
+        }
+
+        private void GoToTalkingScreen(bool isOutgoing)
+        {
+            ChangeStatus(PhoneStatus.Talking);
+
+            StopAnimation(_outgoingPulse);
+            _viewIncoming.Visibility = Visibility.Collapsed;
+            _viewKeypad.Visibility = Visibility.Collapsed;
+            _viewOutgoing.Visibility = Visibility.Collapsed;
+            _viewTalking.Visibility = Visibility.Visible;
+            _isHolding = false;
+
+            _talkingStatusText.Text = "通話中";
+            _talkingStatusText.Foreground = _acceptColor;
+            if (_talkingIconBg != null) _talkingIconBg.Fill = _acceptColor;
+            UpdateHoldButton();
+
+            StartAnimation(_talkingPulse, 1.2);
+
+            if (isOutgoing) _talkingNameText.Text = _outgoingNameText.Text;
+            else _talkingNameText.Text = _incomingNameText.Text;
+
+            _callStartTime = DateTime.Now;
+            _callTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _callTimer.Tick += (s, e) => { var span = DateTime.Now - _callStartTime; _talkingTimerText.Text = $"{(int)span.TotalMinutes:00}:{span.Seconds:00}"; };
+            _callTimer.Start();
+        }
+
+        private void ToggleHold()
+        {
+            _isHolding = !_isHolding;
+            UpdateHoldStatusUI();
+        }
+
+        private void UpdateHoldStatusUI()
+        {
+            if (_isHolding)
+            {
+                ChangeStatus(PhoneStatus.Holding);
+                int rnd = _random.Next(0, 2);
+                string holdFile = (rnd == 0) ? SoundManager.FILE_HOLD1 : SoundManager.FILE_HOLD2;
+                _soundManager.Play(holdFile, loop: true);
+
+                _holdBtn.Content = "再 開"; _holdBtn.Background = _holdColor;
+                _talkingStatusText.Text = "保留中"; _talkingStatusText.Foreground = _holdColor;
+                if (_talkingIconBg != null) _talkingIconBg.Fill = _holdColor;
+                StopAnimation(_talkingPulse);
+            }
+            else
+            {
+                ChangeStatus(PhoneStatus.Talking);
+                _soundManager.Stop();
+
+                _holdBtn.Content = "保 留"; _holdBtn.Background = Brushes.Gray;
+                _talkingStatusText.Text = "通話中"; _talkingStatusText.Foreground = _acceptColor;
+                if (_talkingIconBg != null) _talkingIconBg.Fill = _acceptColor;
+                StartAnimation(_talkingPulse, 1.2);
+            }
+        }
+
+        private void UpdateHoldButton()
+        {
+            _holdBtn.Content = "保 留";
+            _holdBtn.Background = Brushes.Gray;
+        }
+
+        private void EndCall(bool playStatusSound = true)
+        {
+            if (!string.IsNullOrEmpty(_connectedTargetNumber))
+            {
+                _commManager.SendHangup(_connectedTargetNumber);
+                _connectedTargetNumber = null;
+            }
+
+            StopAnimation(_talkingPulse);
+            StopAnimation(_outgoingPulse);
+            StopAnimation(_incomingPulse);
+            _callTimer?.Stop();
+
+            if (playStatusSound) _soundManager.Play(SoundManager.FILE_OKI);
+            else _soundManager.Stop();
+
+            ChangeStatus(PhoneStatus.Idle);
+
+            _viewIncoming.Visibility = Visibility.Collapsed;
+            _viewTalking.Visibility = Visibility.Collapsed;
+            _viewOutgoing.Visibility = Visibility.Collapsed;
+            _viewKeypad.Visibility = Visibility.Visible;
+            _inputNumberBox.Text = "";
+            _statusNameText.Text = "宛先未指定"; _statusNameText.Foreground = Brushes.Gray;
+        }
+
+        private void OpenStationSettings(object sender, RoutedEventArgs e)
+        {
+            var win = new StationSelectionWindow(_currentStation);
+            win.Owner = this;
+            if (win.ShowDialog() == true)
+            {
+                _currentStation = win.SelectedStation;
+                Title = $"模擬鉄 指令電話端末 - [{_currentStation.Name}]";
+                _selfStationDisplay.Text = $"自局: {_currentStation.Name} ({_currentStation.Number})";
+                _commManager.SendLogin(_currentStation.Number);
+                Title += " [オンライン(更新)]";
+            }
         }
 
         private void InitializeComponents()
         {
             var dockPanel = new DockPanel();
-
-            // 1. メニュー
             var menu = new Menu { Background = Brushes.White, Padding = new Thickness(5) };
             menu.Effect = new DropShadowEffect { Color = Colors.Black, Direction = 270, ShadowDepth = 1, Opacity = 0.1, BlurRadius = 4 };
             DockPanel.SetDock(menu, Dock.Top);
@@ -188,23 +364,23 @@ namespace RailwayPhone
             settingsItem.Items.Add(new Separator());
             var exitItem = new MenuItem { Header = "終了(_X)" }; exitItem.Click += (s, e) => Close(); settingsItem.Items.Add(exitItem);
             menu.Items.Add(settingsItem);
+
             var testItem = new MenuItem { Header = "テスト(_T)" };
-            var simItem = new MenuItem { Header = "着信シミュレーション実行" }; simItem.Click += (s, e) => SimulateIncomingCall(); testItem.Items.Add(simItem);
+            var simItem = new MenuItem { Header = "自己着信テスト" };
+            simItem.Click += (s, e) => HandleRealIncomingCall("999");
+            testItem.Items.Add(simItem);
             menu.Items.Add(testItem);
             dockPanel.Children.Add(menu);
 
-            // 2. レイアウト
             var mainGrid = new Grid();
             mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(350) });
             mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            // 左: 電話帳
             var leftPanel = new DockPanel { Margin = new Thickness(15, 15, 5, 15) };
             var listHeader = new TextBlock { Text = "連絡先リスト", FontSize = 18, FontWeight = FontWeights.SemiBold, Foreground = Brushes.DarkSlateGray, Margin = new Thickness(5, 0, 0, 10) };
             DockPanel.SetDock(listHeader, Dock.Top);
             _phoneBookList = new ListView { Background = Brushes.Transparent, BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch };
             ScrollViewer.SetHorizontalScrollBarVisibility(_phoneBookList, ScrollBarVisibility.Disabled);
-
             var itemTemplate = new DataTemplate();
             var fb = new FrameworkElementFactory(typeof(Border)); fb.SetValue(Border.BackgroundProperty, Brushes.White); fb.SetValue(Border.CornerRadiusProperty, new CornerRadius(8)); fb.SetValue(Border.PaddingProperty, new Thickness(10)); fb.SetValue(Border.MarginProperty, new Thickness(2, 0, 5, 8)); fb.SetValue(Border.EffectProperty, new DropShadowEffect { Color = Colors.Black, Direction = 270, ShadowDepth = 1, Opacity = 0.1, BlurRadius = 4 });
             var fg = new FrameworkElementFactory(typeof(Grid));
@@ -223,296 +399,31 @@ namespace RailwayPhone
             leftPanel.Children.Add(_phoneBookList);
             Grid.SetColumn(leftPanel, 0); mainGrid.Children.Add(leftPanel);
 
-            // 右: コンテナ
             var rightWrapper = new Grid { Margin = new Thickness(5, 15, 15, 15) };
             var rightCard = new Border { Background = Brushes.White, CornerRadius = new CornerRadius(10), Effect = new DropShadowEffect { Color = Colors.Black, Direction = 270, ShadowDepth = 2, Opacity = 0.1, BlurRadius = 10 } };
             rightWrapper.Children.Add(rightCard);
-
             _rightPanelContainer = new Grid();
             rightCard.Child = _rightPanelContainer;
 
-            // 各ビュー生成
-            _viewKeypad = CreateKeypadView();
-            _rightPanelContainer.Children.Add(_viewKeypad);
-
-            _viewIncoming = CreateIncomingView();
-            _viewIncoming.Visibility = Visibility.Collapsed;
-            _rightPanelContainer.Children.Add(_viewIncoming);
-
-            _viewOutgoing = CreateOutgoingView();
-            _viewOutgoing.Visibility = Visibility.Collapsed;
-            _rightPanelContainer.Children.Add(_viewOutgoing);
-
-            _viewTalking = CreateTalkingView();
-            _viewTalking.Visibility = Visibility.Collapsed;
-            _rightPanelContainer.Children.Add(_viewTalking);
+            _viewKeypad = CreateKeypadView(); _rightPanelContainer.Children.Add(_viewKeypad);
+            _viewIncoming = CreateIncomingView(); _viewIncoming.Visibility = Visibility.Collapsed; _rightPanelContainer.Children.Add(_viewIncoming);
+            _viewOutgoing = CreateOutgoingView(); _viewOutgoing.Visibility = Visibility.Collapsed; _rightPanelContainer.Children.Add(_viewOutgoing);
+            _viewTalking = CreateTalkingView(); _viewTalking.Visibility = Visibility.Collapsed; _rightPanelContainer.Children.Add(_viewTalking);
 
             Grid.SetColumn(rightWrapper, 1); mainGrid.Children.Add(rightWrapper);
             dockPanel.Children.Add(mainGrid); Content = dockPanel;
         }
 
-        // --- ビュー作成ヘルパー (アイコン生成) ---
-        private Grid CreatePulsingIcon(Brush color, out ScaleTransform transform)
-        {
-            var grid = new Grid { Width = 100, Height = 100, Margin = new Thickness(0, 0, 0, 20) };
-            var ellipse = new Ellipse { Fill = color, Opacity = 0.2 };
-            var text = new TextBlock { Text = "📞", FontSize = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = color };
+        private Grid CreatePulsingIcon(Brush color, out ScaleTransform transform) { var g = new Grid { Width = 100, Height = 100, Margin = new Thickness(0, 0, 0, 20) }; var el = new Ellipse { Fill = color, Opacity = 0.2 }; var tx = new TextBlock { Text = "📞", FontSize = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = color }; transform = new ScaleTransform(1.0, 1.0, 50, 50); el.RenderTransform = transform; g.Children.Add(el); g.Children.Add(tx); return g; }
+        private UIElement CreateKeypadView() { var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Width = 280 }; _selfStationDisplay = new TextBlock { Text = $"自局: {_currentStation.Name} ({_currentStation.Number})", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 30), Background = new SolidColorBrush(Color.FromRgb(230, 240, 255)), Padding = new Thickness(10, 5, 10, 5) }; p.Children.Add(_selfStationDisplay); _statusNameText = new TextBlock { Text = "宛先未指定", FontSize = 20, FontWeight = FontWeights.Light, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 20) }; p.Children.Add(_statusNameText); _inputNumberBox = new TextBox { Text = "", FontSize = 36, FontWeight = FontWeights.Bold, Foreground = Brushes.Black, HorizontalContentAlignment = HorizontalAlignment.Center, BorderThickness = new Thickness(0, 0, 0, 2), BorderBrush = _primaryColor, Background = Brushes.Transparent, Margin = new Thickness(0, 0, 0, 30), FontFamily = new FontFamily("Consolas") }; _inputNumberBox.TextChanged += OnInputNumberChanged; p.Children.Add(_inputNumberBox); var kg = new Grid { Margin = new Thickness(0, 0, 0, 30), HorizontalAlignment = HorizontalAlignment.Center }; for (int i = 0; i < 3; i++) kg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) }); for (int i = 0; i < 4; i++) kg.RowDefinitions.Add(new RowDefinition { Height = new GridLength(70) }); int num = 1; for (int row = 0; row < 3; row++) { for (int col = 0; col < 3; col++) { var btn = CreateDialButton(num.ToString()); Grid.SetRow(btn, row); Grid.SetColumn(btn, col); kg.Children.Add(btn); num++; } } var bs = CreateDialButton("*"); Grid.SetRow(bs, 3); Grid.SetColumn(bs, 0); kg.Children.Add(bs); var bz = CreateDialButton("0"); Grid.SetRow(bz, 3); Grid.SetColumn(bz, 1); kg.Children.Add(bz); var bd = new Button { Content = "⌫", FontSize = 20, FontWeight = FontWeights.Bold, Background = Brushes.WhiteSmoke, Foreground = Brushes.DimGray, BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1), Margin = new Thickness(5), Cursor = System.Windows.Input.Cursors.Hand }; var ds = new Style(typeof(Border)); ds.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); bd.Resources.Add(typeof(Border), ds); bd.Click += (s, e) => { var t = _inputNumberBox.Text; if (!string.IsNullOrEmpty(t)) { _inputNumberBox.Text = t.Substring(0, t.Length - 1); _inputNumberBox.CaretIndex = _inputNumberBox.Text.Length; _inputNumberBox.Focus(); } }; Grid.SetRow(bd, 3); Grid.SetColumn(bd, 2); kg.Children.Add(bd); p.Children.Add(kg); var cb = new Button { Content = "発 信", Height = 50, FontSize = 18, FontWeight = FontWeights.Bold, Background = _primaryColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand, Margin = new Thickness(10, 0, 10, 0) }; var cs = new Style(typeof(Border)); cs.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(25))); cb.Resources.Add(typeof(Border), cs); cb.Click += (s, e) => StartOutgoingCall(); p.Children.Add(cb); return p; }
+        private UIElement CreateIncomingView() { var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center }; p.Children.Add(new TextBlock { Text = "着信中...", FontSize = 16, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) }); p.Children.Add(CreatePulsingIcon(_primaryColor, out _incomingPulse)); _incomingNameText = new TextBlock { Text = "---", FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) }; p.Children.Add(_incomingNameText); _incomingNumberText = new TextBlock { Text = "---", FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) }; p.Children.Add(_incomingNumberText); var bg = new Grid { Width = 300 }; bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) }); bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); var ab = new Button { Content = "📞 応答", Height = 60, Background = _acceptColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var @as = new Style(typeof(Border)); @as.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); ab.Resources.Add(typeof(Border), @as); ab.Click += (s, e) => AnswerCall(); Grid.SetColumn(ab, 0); bg.Children.Add(ab); var rb = new Button { Content = "切断", Height = 60, Background = _dangerColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var rs = new Style(typeof(Border)); rs.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); rb.Resources.Add(typeof(Border), rs); rb.Click += (s, e) => EndCall(false); Grid.SetColumn(rb, 2); bg.Children.Add(rb); p.Children.Add(bg); return p; }
+        private UIElement CreateOutgoingView() { var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center }; p.Children.Add(new TextBlock { Text = "呼び出し中...", FontSize = 16, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) }); p.Children.Add(CreatePulsingIcon(_primaryColor, out _outgoingPulse)); _outgoingNameText = new TextBlock { Text = "---", FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) }; p.Children.Add(_outgoingNameText); _outgoingNumberText = new TextBlock { Text = "---", FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) }; p.Children.Add(_outgoingNumberText); var cb = new Button { Content = "取 消", Width = 200, Height = 60, Background = _dangerColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var cs = new Style(typeof(Border)); cs.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); cb.Resources.Add(typeof(Border), cs); cb.Click += (s, e) => EndCall(true); p.Children.Add(cb); return p; }
+        private UIElement CreateTalkingView() { var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center }; _talkingStatusText = new TextBlock { Text = "通話中", FontSize = 16, Foreground = _acceptColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10), FontWeight = FontWeights.Bold }; p.Children.Add(_talkingStatusText); var ig = CreatePulsingIcon(_acceptColor, out _talkingPulse); _talkingIconBg = ig.Children.OfType<Ellipse>().FirstOrDefault(); p.Children.Add(ig); _talkingNameText = new TextBlock { Text = "---", FontSize = 28, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 20) }; p.Children.Add(_talkingNameText); _talkingTimerText = new TextBlock { Text = "00:00", FontSize = 48, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.DarkSlateGray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 40) }; p.Children.Add(_talkingTimerText); var bg = new Grid { Width = 300 }; bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) }); bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); _holdBtn = new Button { Content = "保 留", Height = 60, Background = Brushes.Gray, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var hs = new Style(typeof(Border)); hs.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); _holdBtn.Resources.Add(typeof(Border), hs); _holdBtn.Click += (s, e) => ToggleHold(); Grid.SetColumn(_holdBtn, 0); bg.Children.Add(_holdBtn); var eb = new Button { Content = "終 話", Height = 60, Background = _dangerColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var es = new Style(typeof(Border)); es.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); eb.Resources.Add(typeof(Border), es); eb.Click += (s, e) => EndCall(true); Grid.SetColumn(eb, 2); bg.Children.Add(eb); p.Children.Add(bg); return p; }
 
-            transform = new ScaleTransform(1.0, 1.0, 50, 50); // 中心点(50,50)
-            ellipse.RenderTransform = transform;
-
-            grid.Children.Add(ellipse);
-            grid.Children.Add(text);
-            return grid;
-        }
-
-        // 1. 待機画面
-        private UIElement CreateKeypadView()
-        {
-            var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Width = 280 };
-            _selfStationDisplay = new TextBlock { Text = $"自局: {_currentStation.Name} ({_currentStation.Number})", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 30), Background = new SolidColorBrush(Color.FromRgb(230, 240, 255)), Padding = new Thickness(10, 5, 10, 5) };
-            panel.Children.Add(_selfStationDisplay);
-            _statusNameText = new TextBlock { Text = "宛先未指定", FontSize = 20, FontWeight = FontWeights.Light, Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 20) };
-            panel.Children.Add(_statusNameText);
-            _inputNumberBox = new TextBox { Text = "", FontSize = 36, FontWeight = FontWeights.Bold, Foreground = Brushes.Black, HorizontalContentAlignment = HorizontalAlignment.Center, BorderThickness = new Thickness(0, 0, 0, 2), BorderBrush = _primaryColor, Background = Brushes.Transparent, Margin = new Thickness(0, 0, 0, 30), FontFamily = new FontFamily("Consolas") };
-            _inputNumberBox.TextChanged += OnInputNumberChanged;
-            panel.Children.Add(_inputNumberBox);
-            var keyPadGrid = new Grid { Margin = new Thickness(0, 0, 0, 30), HorizontalAlignment = HorizontalAlignment.Center };
-            for (int i = 0; i < 3; i++) keyPadGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) }); for (int i = 0; i < 4; i++) keyPadGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(70) });
-            int num = 1; for (int row = 0; row < 3; row++) { for (int col = 0; col < 3; col++) { var btn = CreateDialButton(num.ToString()); Grid.SetRow(btn, row); Grid.SetColumn(btn, col); keyPadGrid.Children.Add(btn); num++; } }
-            var btnStar = CreateDialButton("*"); Grid.SetRow(btnStar, 3); Grid.SetColumn(btnStar, 0); keyPadGrid.Children.Add(btnStar);
-            var btnZero = CreateDialButton("0"); Grid.SetRow(btnZero, 3); Grid.SetColumn(btnZero, 1); keyPadGrid.Children.Add(btnZero);
-            var btnDel = new Button { Content = "⌫", FontSize = 20, FontWeight = FontWeights.Bold, Background = Brushes.WhiteSmoke, Foreground = Brushes.DimGray, BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1), Margin = new Thickness(5), Cursor = System.Windows.Input.Cursors.Hand }; var dStyle = new Style(typeof(Border)); dStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); btnDel.Resources.Add(typeof(Border), dStyle);
-            btnDel.Click += (s, e) => { var t = _inputNumberBox.Text; if (!string.IsNullOrEmpty(t)) { _inputNumberBox.Text = t.Substring(0, t.Length - 1); _inputNumberBox.CaretIndex = _inputNumberBox.Text.Length; _inputNumberBox.Focus(); } };
-            Grid.SetRow(btnDel, 3); Grid.SetColumn(btnDel, 2); keyPadGrid.Children.Add(btnDel);
-            panel.Children.Add(keyPadGrid);
-            var callBtn = new Button { Content = "発 信", Height = 50, FontSize = 18, FontWeight = FontWeights.Bold, Background = _primaryColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand, Margin = new Thickness(10, 0, 10, 0) }; var cStyle = new Style(typeof(Border)); cStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(25))); callBtn.Resources.Add(typeof(Border), cStyle);
-            callBtn.Click += (s, e) => StartOutgoingCall();
-            panel.Children.Add(callBtn);
-            return panel;
-        }
-
-        // 2. 着信画面
-        private UIElement CreateIncomingView()
-        {
-            var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            panel.Children.Add(new TextBlock { Text = "着信中...", FontSize = 16, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) });
-            panel.Children.Add(CreatePulsingIcon(_primaryColor, out _incomingPulse));
-            _incomingNameText = new TextBlock { Text = "---", FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) };
-            panel.Children.Add(_incomingNameText);
-            _incomingNumberText = new TextBlock { Text = "---", FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) };
-            panel.Children.Add(_incomingNumberText);
-            var btnGrid = new Grid { Width = 300 };
-            btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) }); btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var answerBtn = new Button { Content = "📞 応答", Height = 60, Background = _acceptColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var aStyle = new Style(typeof(Border)); aStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); answerBtn.Resources.Add(typeof(Border), aStyle);
-            answerBtn.Click += (s, e) => AnswerCall(); Grid.SetColumn(answerBtn, 0); btnGrid.Children.Add(answerBtn);
-            var rejectBtn = new Button { Content = "切断", Height = 60, Background = _dangerColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var rStyle = new Style(typeof(Border)); rStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); rejectBtn.Resources.Add(typeof(Border), rStyle);
-            rejectBtn.Click += (s, e) => EndCall(); Grid.SetColumn(rejectBtn, 2); btnGrid.Children.Add(rejectBtn);
-            panel.Children.Add(btnGrid);
-            return panel;
-        }
-
-        // 3. 発信画面
-        private UIElement CreateOutgoingView()
-        {
-            var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            panel.Children.Add(new TextBlock { Text = "呼び出し中...", FontSize = 16, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) });
-            panel.Children.Add(CreatePulsingIcon(_primaryColor, out _outgoingPulse));
-            _outgoingNameText = new TextBlock { Text = "---", FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) };
-            panel.Children.Add(_outgoingNameText);
-            _outgoingNumberText = new TextBlock { Text = "---", FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) };
-            panel.Children.Add(_outgoingNumberText);
-            var cancelBtn = new Button { Content = "取 消", Width = 200, Height = 60, Background = _dangerColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var cStyle = new Style(typeof(Border)); cStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); cancelBtn.Resources.Add(typeof(Border), cStyle);
-            cancelBtn.Click += (s, e) => EndCall();
-            panel.Children.Add(cancelBtn);
-            return panel;
-        }
-
-        // 4. 通話画面
-        private UIElement CreateTalkingView()
-        {
-            var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            _talkingStatusText = new TextBlock { Text = "通話中", FontSize = 16, Foreground = _acceptColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10), FontWeight = FontWeights.Bold };
-            panel.Children.Add(_talkingStatusText);
-            var iconGrid = CreatePulsingIcon(_acceptColor, out _talkingPulse);
-            _talkingIconBg = iconGrid.Children.OfType<Ellipse>().FirstOrDefault();
-            panel.Children.Add(iconGrid);
-            _talkingNameText = new TextBlock { Text = "---", FontSize = 28, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 20) };
-            panel.Children.Add(_talkingNameText);
-            _talkingTimerText = new TextBlock { Text = "00:00", FontSize = 48, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.DarkSlateGray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 40) };
-            panel.Children.Add(_talkingTimerText);
-            var btnGrid = new Grid { Width = 300 };
-            btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) }); btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            _holdBtn = new Button { Content = "保 留", Height = 60, Background = Brushes.Gray, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var hStyle = new Style(typeof(Border)); hStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); _holdBtn.Resources.Add(typeof(Border), hStyle);
-            _holdBtn.Click += (s, e) => ToggleHold(); Grid.SetColumn(_holdBtn, 0); btnGrid.Children.Add(_holdBtn);
-            var endBtn = new Button { Content = "終 話", Height = 60, Background = _dangerColor, Foreground = Brushes.White, FontSize = 18, FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand }; var eStyle = new Style(typeof(Border)); eStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); endBtn.Resources.Add(typeof(Border), eStyle);
-            endBtn.Click += (s, e) => EndCall(); Grid.SetColumn(endBtn, 2); btnGrid.Children.Add(endBtn);
-            panel.Children.Add(btnGrid);
-            return panel;
-        }
-
-        // --- アニメーション制御 ---
-        private void StartAnimation(ScaleTransform target, double durationSec)
-        {
-            if (target == null) return;
-            var animX = new DoubleAnimation(1.0, 1.2, TimeSpan.FromSeconds(durationSec)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever };
-            var animY = new DoubleAnimation(1.0, 1.2, TimeSpan.FromSeconds(durationSec)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever };
-            target.BeginAnimation(ScaleTransform.ScaleXProperty, animX);
-            target.BeginAnimation(ScaleTransform.ScaleYProperty, animY);
-        }
-
-        private void StopAnimation(ScaleTransform target)
-        {
-            if (target == null) return;
-            target.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-            target.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-        }
-
-        // --- ロジック ---
-
-        private void SimulateIncomingCall()
-        {
-            try
-            {
-                if (_currentStation == null || PhoneBook.Entries == null) return;
-                var others = PhoneBook.Entries.Where(x => x.Number != _currentStation.Number).ToList();
-                if (others.Count == 0) return;
-                var caller = others[new Random().Next(others.Count)];
-
-                ChangeStatus(PhoneStatus.Incoming);
-
-                _viewKeypad.Visibility = Visibility.Collapsed; _viewTalking.Visibility = Visibility.Collapsed; _viewOutgoing.Visibility = Visibility.Collapsed;
-                _viewIncoming.Visibility = Visibility.Visible;
-
-                _incomingNameText.Text = caller.Name;
-                if (_incomingNumberText != null) _incomingNumberText.Text = caller.Number;
-
-                // アニメ開始
-                StartAnimation(_incomingPulse, 0.5);
-
-                if (_currentOutputDevice != null) _soundManager.SetOutputDevice(_currentOutputDevice.ID);
-                if (caller.Number.StartsWith("1")) _soundManager.Play(SoundManager.FILE_YOBI2, loop: true);
-                else _soundManager.Play(SoundManager.FILE_YOBI1, loop: true);
-
-                new ToastContentBuilder().AddText("着信あり").AddText($"{caller.Name} ({caller.Number})").Show();
-            }
-            catch (Exception ex) { MessageBox.Show(ex.Message); }
-        }
-
-        private async void StartOutgoingCall()
-        {
-            if (string.IsNullOrEmpty(_inputNumberBox.Text)) return;
-
-            ChangeStatus(PhoneStatus.Outgoing);
-
-            _viewKeypad.Visibility = Visibility.Collapsed; _viewTalking.Visibility = Visibility.Collapsed; _viewIncoming.Visibility = Visibility.Collapsed;
-            _viewOutgoing.Visibility = Visibility.Visible;
-
-            _outgoingNameText.Text = _statusNameText.Text;
-            _outgoingNumberText.Text = _inputNumberBox.Text;
-
-            // アニメ開始
-            StartAnimation(_outgoingPulse, 0.8);
-
-            if (_currentOutputDevice != null) _soundManager.SetOutputDevice(_currentOutputDevice.ID);
-
-            _soundManager.Play(SoundManager.FILE_TORI);
-            await Task.Delay(800);
-
-            if (CurrentStatus == PhoneStatus.Outgoing)
-            {
-                _soundManager.Play(SoundManager.FILE_YOBIDASHI, loop: true);
-                var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-                t.Tick += (s, e) => { t.Stop(); AnswerCall(isOutgoing: true); };
-                t.Start();
-            }
-        }
-
-        private void AnswerCall(bool isOutgoing = false)
-        {
-            StopAnimation(_outgoingPulse);
-            StopAnimation(_incomingPulse);
-            _soundManager.Stop();
-            _soundManager.Play(SoundManager.FILE_TORI);
-
-            ChangeStatus(PhoneStatus.Talking);
-
-            _viewIncoming.Visibility = Visibility.Collapsed; _viewKeypad.Visibility = Visibility.Collapsed; _viewOutgoing.Visibility = Visibility.Collapsed;
-            _viewTalking.Visibility = Visibility.Visible;
-            _isHolding = false;
-
-            StartAnimation(_talkingPulse, 1.2);
-            UpdateHoldStatusUI();
-
-            if (isOutgoing) _talkingNameText.Text = _statusNameText.Text;
-            else _talkingNameText.Text = _incomingNameText.Text;
-
-            _callStartTime = DateTime.Now;
-            _callTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _callTimer.Tick += (s, e) => { var span = DateTime.Now - _callStartTime; _talkingTimerText.Text = $"{(int)span.TotalMinutes:00}:{span.Seconds:00}"; };
-            _callTimer.Start();
-        }
-
-        private void ToggleHold()
-        {
-            _isHolding = !_isHolding;
-
-            if (_isHolding)
-            {
-                ChangeStatus(PhoneStatus.Holding);
-                int rnd = _random.Next(0, 2);
-                string holdFile = (rnd == 0) ? SoundManager.FILE_HOLD1 : SoundManager.FILE_HOLD2;
-                _soundManager.Play(holdFile, loop: true);
-            }
-            else
-            {
-                ChangeStatus(PhoneStatus.Talking);
-                _soundManager.Stop();
-            }
-            UpdateHoldStatusUI();
-        }
-
-        private void UpdateHoldStatusUI()
-        {
-            if (_isHolding)
-            {
-                _holdBtn.Content = "再 開";
-                _holdBtn.Background = _holdColor;
-                _talkingStatusText.Text = "保留中";
-                _talkingStatusText.Foreground = _holdColor;
-                if (_talkingIconBg != null) _talkingIconBg.Fill = _holdColor;
-                StopAnimation(_talkingPulse);
-            }
-            else
-            {
-                _holdBtn.Content = "保 留";
-                _holdBtn.Background = Brushes.Gray;
-                _talkingStatusText.Text = "通話中";
-                _talkingStatusText.Foreground = _acceptColor;
-                if (_talkingIconBg != null) _talkingIconBg.Fill = _acceptColor;
-                StartAnimation(_talkingPulse, 1.2);
-            }
-        }
-
-        private void EndCall()
-        {
-            StopAnimation(_talkingPulse);
-            StopAnimation(_outgoingPulse);
-            StopAnimation(_incomingPulse);
-            _callTimer?.Stop();
-            _soundManager.Play(SoundManager.FILE_OKI);
-
-            ChangeStatus(PhoneStatus.Idle);
-
-            _viewIncoming.Visibility = Visibility.Collapsed; _viewTalking.Visibility = Visibility.Collapsed; _viewOutgoing.Visibility = Visibility.Collapsed;
-            _viewKeypad.Visibility = Visibility.Visible;
-            _inputNumberBox.Text = "";
-            _statusNameText.Text = "宛先未指定"; _statusNameText.Foreground = Brushes.Gray;
-        }
-
+        private void StartAnimation(ScaleTransform target, double durationSec) { if (target == null) return; var ax = new DoubleAnimation(1.0, 1.2, TimeSpan.FromSeconds(durationSec)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever }; var ay = new DoubleAnimation(1.0, 1.2, TimeSpan.FromSeconds(durationSec)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever }; target.BeginAnimation(ScaleTransform.ScaleXProperty, ax); target.BeginAnimation(ScaleTransform.ScaleYProperty, ay); }
+        private void StopAnimation(ScaleTransform target) { if (target == null) return; target.BeginAnimation(ScaleTransform.ScaleXProperty, null); target.BeginAnimation(ScaleTransform.ScaleYProperty, null); }
         private Button CreateDialButton(string t) { var b = new Button { Content = t, FontSize = 24, FontWeight = FontWeights.SemiBold, Background = Brushes.White, Foreground = Brushes.DarkSlateGray, BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1), Margin = new Thickness(5), Cursor = System.Windows.Input.Cursors.Hand }; var s = new Style(typeof(Border)); s.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); b.Resources.Add(typeof(Border), s); b.Click += (o, e) => { _inputNumberBox.Text += t; _inputNumberBox.CaretIndex = _inputNumberBox.Text.Length; _inputNumberBox.Focus(); }; return b; }
         private void OnInputNumberChanged(object s, TextChangedEventArgs e) { string cur = _inputNumberBox.Text; if (string.IsNullOrWhiteSpace(cur)) { _statusNameText.Text = "宛先未指定"; _statusNameText.Foreground = Brushes.Gray; return; } var m = PhoneBook.Entries.FirstOrDefault(x => x.Number == cur); if (m != null) { _statusNameText.Text = m.Name; _statusNameText.Foreground = Brushes.Black; _phoneBookList.SelectedItem = m; _phoneBookList.ScrollIntoView(m); } else { _statusNameText.Text = "未登録の番号"; _statusNameText.Foreground = Brushes.Gray; _phoneBookList.SelectedItem = null; } }
         private void OpenAudioSettings(object sender, RoutedEventArgs e) { var win = new AudioSettingWindow(_currentInputDevice, _currentOutputDevice, _currentInputVol, _currentOutputVol); win.Owner = this; if (win.ShowDialog() == true) { _currentInputDevice = win.SelectedInput; _currentOutputDevice = win.SelectedOutput; _currentInputVol = win.InputVolume; _currentOutputVol = win.OutputVolume; } }
-        private void OpenStationSettings(object sender, RoutedEventArgs e) { var win = new StationSelectionWindow(_currentStation); win.Owner = this; if (win.ShowDialog() == true) { _currentStation = win.SelectedStation; Title = $"模擬鉄 指令電話端末 - [{_currentStation.Name}]"; _selfStationDisplay.Text = $"自局: {_currentStation.Name} ({_currentStation.Number})"; } }
     }
 }

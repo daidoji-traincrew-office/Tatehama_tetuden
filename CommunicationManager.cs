@@ -2,9 +2,7 @@
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Windows; // MessageBox用
 
 namespace RailwayPhone
 {
@@ -14,10 +12,8 @@ namespace RailwayPhone
         private NetworkStream _stream;
         private bool _isConnected = false;
 
-        // サーバーからメッセージが届いたときに発生するイベント
         public event Action<string> MessageReceived;
 
-        // 接続処理
         public async Task<bool> Connect(string ipAddress, int port)
         {
             try
@@ -26,26 +22,13 @@ namespace RailwayPhone
                 await _client.ConnectAsync(ipAddress, port);
                 _stream = _client.GetStream();
                 _isConnected = true;
-
-                // 受信タスクを開始（裏でずっと聞き耳を立てる）
                 _ = Task.Run(ReceiveLoop);
-
                 return true;
             }
-            catch (Exception)
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
-        // ログイン情報を送る
-        public void SendLogin(string number)
-        {
-            var data = new { type = "LOGIN", number = number };
-            SendMessage(data);
-        }
-
-        // 汎用的な送信メソッド
+        // 基本送信
         public void SendMessage(object data)
         {
             if (!_isConnected) return;
@@ -55,14 +38,37 @@ namespace RailwayPhone
                 byte[] bytes = Encoding.UTF8.GetBytes(json);
                 _stream.Write(bytes, 0, bytes.Length);
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"送信エラー: {ex.Message}");
-                _isConnected = false;
-            }
+            catch { _isConnected = false; }
         }
 
-        // 受信ループ（裏で動き続ける）
+        // --- ★ここから機能追加 ---
+
+        // ログイン (場所変更時もこれを使う)
+        public void SendLogin(string myNumber)
+        {
+            SendMessage(new { type = "LOGIN", number = myNumber });
+        }
+
+        // 発信 (相手の番号を指定)
+        public void SendCall(string targetNumber)
+        {
+            SendMessage(new { type = "CALL", target = targetNumber });
+        }
+
+        // 応答 (相手に応答したことを伝える)
+        public void SendAnswer(string targetNumber)
+        {
+            SendMessage(new { type = "ANSWER", target = targetNumber });
+        }
+
+        // 切断 (相手に切ったことを伝える)
+        public void SendHangup(string targetNumber)
+        {
+            SendMessage(new { type = "HANGUP", target = targetNumber });
+        }
+
+        // --- ここまで ---
+
         private async Task ReceiveLoop()
         {
             byte[] buffer = new byte[4096];
@@ -70,24 +76,15 @@ namespace RailwayPhone
             {
                 while (_isConnected)
                 {
-                    // データが来るまでここで待機
                     int bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length);
-                    if (bytesRead == 0) break; // 切断された
-
+                    if (bytesRead == 0) break;
+                    // 受信データが連結している可能性を考慮して分割処理等は省略（簡易実装）
                     string json = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-
-                    // イベントを発火してメイン画面に知らせる
                     MessageReceived?.Invoke(json);
                 }
             }
-            catch
-            {
-                // エラーまたは切断
-            }
-            finally
-            {
-                _isConnected = false;
-            }
+            catch { }
+            finally { _isConnected = false; }
         }
 
         public void Dispose()
