@@ -11,11 +11,14 @@ namespace RailwayPhone
         private AudioFileReader _reader;
         private string _deviceId;
 
-        // フォルダ名は "Sounds"
+        // ★ファイル定義を更新
         public const string FILE_OKI = "Sounds/oki.wav";
         public const string FILE_TORI = "Sounds/tori.wav";
-        public const string FILE_YOBI1 = "Sounds/yobi1.wav";
-        public const string FILE_YOBI2 = "Sounds/yobi2.wav";
+        public const string FILE_YOBI1 = "Sounds/yobi1.wav";       // 一般着信
+        public const string FILE_YOBI2 = "Sounds/yobi2.wav";       // 司令着信
+        public const string FILE_YOBIDASHI = "Sounds/yobidashi.wav"; // 発信呼出音
+        public const string FILE_HOLD1 = "Sounds/hold1.wav";       // 保留音1
+        public const string FILE_HOLD2 = "Sounds/hold2.wav";       // 保留音2
 
         public void SetOutputDevice(string deviceId)
         {
@@ -24,14 +27,12 @@ namespace RailwayPhone
 
         public void Play(string fileName, bool loop = false)
         {
-            // 前の音を止める
             try { Stop(); } catch { }
 
             if (!File.Exists(fileName)) return;
 
             try
             {
-                // デバイス選択ロジック（WaveOutEvent or WasapiOut）
                 if (string.IsNullOrEmpty(_deviceId))
                 {
                     _player = new WaveOutEvent();
@@ -53,7 +54,7 @@ namespace RailwayPhone
 
                 if (loop)
                 {
-                    // ★修正: ループ時は「1000ミリ秒(1秒)」の無音を入れる設定にする
+                    // 1秒の無音間隔付きループ
                     var loopStream = new LoopStream(_reader, 1000);
                     _player.Init(loopStream);
                 }
@@ -87,27 +88,18 @@ namespace RailwayPhone
         }
     }
 
-    // ★修正: 無音時間を追加できるループストリーム
+    // LoopStreamクラスは変更なし（前回のままでOKですが、セットで載せておきます）
     public class LoopStream : WaveStream
     {
         WaveStream sourceStream;
+        private long _delayBytes;
+        private long _delayBytesRead;
+        private bool _inDelay;
 
-        // 無音処理用の変数
-        private long _delayBytes;      // 1秒分のバイト数
-        private long _delayBytesRead;  // 現在読んだ無音バイト数
-        private bool _inDelay;         // 今「無音モード」かどうか
-
-        /// <summary>
-        /// コンストラクタ
-        /// </summary>
-        /// <param name="sourceStream">元になる音声ストリーム</param>
-        /// <param name="delayMilliseconds">ループ間の無音時間(ミリ秒)</param>
         public LoopStream(WaveStream sourceStream, int delayMilliseconds = 0)
         {
             this.sourceStream = sourceStream;
             this.EnableLooping = true;
-
-            // 1秒あたりのデータ量(平均バイト数) × 秒数 ＝ 必要な無音データのバイト数
             _delayBytes = (sourceStream.WaveFormat.AverageBytesPerSecond * delayMilliseconds) / 1000;
             _delayBytesRead = 0;
             _inDelay = false;
@@ -119,59 +111,30 @@ namespace RailwayPhone
         public override long Position
         {
             get => sourceStream.Position;
-            set
-            {
-                sourceStream.Position = value;
-                _inDelay = false;       // 位置が手動で変えられたら無音モード解除
-                _delayBytesRead = 0;
-            }
+            set { sourceStream.Position = value; _inDelay = false; _delayBytesRead = 0; }
         }
 
         public override int Read(byte[] buffer, int offset, int count)
         {
             int totalBytesRead = 0;
-
             while (totalBytesRead < count)
             {
                 if (!_inDelay)
                 {
-                    // --- 通常モード: 音声データを読む ---
                     int bytesRead = sourceStream.Read(buffer, offset + totalBytesRead, count - totalBytesRead);
-
                     if (bytesRead == 0)
                     {
-                        // データが終わった場合
-                        if (sourceStream.Position == 0 || !EnableLooping)
-                        {
-                            // ループしない設定ならここで終了
-                            break;
-                        }
-
-                        // ループする場合、ここから「無音モード」に切り替え
-                        _inDelay = true;
-                        _delayBytesRead = 0;
-                        continue; // whileループの先頭に戻って、今度は無音データを読みに行く
+                        if (sourceStream.Position == 0 || !EnableLooping) break;
+                        _inDelay = true; _delayBytesRead = 0; continue;
                     }
                     totalBytesRead += bytesRead;
                 }
                 else
                 {
-                    // --- 無音モード: 0 (無音) を書き込む ---
-                    // 今回読み取るべきバイト数（バッファの残り容量 vs 無音の残り時間）
                     long bytesToRead = Math.Min(count - totalBytesRead, _delayBytes - _delayBytesRead);
-
-                    // バッファを0で埋める
                     Array.Clear(buffer, offset + totalBytesRead, (int)bytesToRead);
-
-                    _delayBytesRead += bytesToRead;
-                    totalBytesRead += (int)bytesToRead;
-
-                    // 指定時間の無音が終わったら、曲の先頭に戻す
-                    if (_delayBytesRead >= _delayBytes)
-                    {
-                        _inDelay = false;
-                        sourceStream.Position = 0;
-                    }
+                    _delayBytesRead += bytesToRead; totalBytesRead += (int)bytesToRead;
+                    if (_delayBytesRead >= _delayBytes) { _inDelay = false; sourceStream.Position = 0; }
                 }
             }
             return totalBytesRead;

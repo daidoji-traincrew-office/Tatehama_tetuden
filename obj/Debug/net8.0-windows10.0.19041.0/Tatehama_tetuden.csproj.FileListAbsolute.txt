@@ -29,3 +29,6 @@ C:\Users\user\source\repos\Tatehama_tetuden\bin\Debug\net8.0-windows10.0.19041.0
 C:\Users\user\source\repos\Tatehama_tetuden\bin\Debug\net8.0-windows10.0.19041.0\Sounds\tori.wav
 C:\Users\user\source\repos\Tatehama_tetuden\bin\Debug\net8.0-windows10.0.19041.0\Sounds\yobi1.wav
 C:\Users\user\source\repos\Tatehama_tetuden\bin\Debug\net8.0-windows10.0.19041.0\Sounds\yobi2.wav
+C:\Users\user\source\repos\Tatehama_tetuden\bin\Debug\net8.0-windows10.0.19041.0\Sounds\hold1.wav
+C:\Users\user\source\repos\Tatehama_tetuden\bin\Debug\net8.0-windows10.0.19041.0\Sounds\hold2.wav
+C:\Users\user\source\repos\Tatehama_tetuden\bin\Debug\net8.0-windows10.0.19041.0\Sounds\yobidashi.wav
