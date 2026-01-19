@@ -63,16 +63,20 @@ namespace RailwayPhone
             SendMessage(new { type = "HANGUP", target = targetNumber });
         }
 
-        // ★★★ 追加: 保留信号 ★★★
         public void SendHold(string targetNumber)
         {
             SendMessage(new { type = "HOLD", target = targetNumber });
         }
 
-        // ★★★ 追加: 再開信号 ★★★
         public void SendResume(string targetNumber)
         {
             SendMessage(new { type = "RESUME", target = targetNumber });
+        }
+
+        // ★追加: 話し中(拒否)信号を送る
+        public void SendBusy(string targetNumber)
+        {
+            SendMessage(new { type = "BUSY", target = targetNumber });
         }
 
         // --- 受信ループ ---

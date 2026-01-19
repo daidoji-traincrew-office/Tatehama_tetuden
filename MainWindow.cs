@@ -27,18 +27,15 @@ namespace RailwayPhone
         private const int SERVER_PORT = 8888;
 
         // --- デバイス設定 ---
-        private DeviceInfo _currentInputDevice;   // マイク
-
-        // ★修正: 出力先変数を2つに統一（通常用とスピーカー用）
-        private DeviceInfo _normalOutputDevice;   // 受話器・イヤホン（通常）
-        private DeviceInfo _speakerOutputDevice;  // スピーカー（ハンズフリー）
-
+        private DeviceInfo _currentInputDevice;
+        private DeviceInfo _normalOutputDevice;
+        private DeviceInfo _speakerOutputDevice;
         private float _currentInputVol = 1.0f;
         private float _currentOutputVol = 1.0f;
 
         // --- データ ---
         private PhoneBookEntry _currentStation;
-        private string _connectedTargetNumber;
+        private string _connectedTargetNumber; // 現在の相手
         private string _targetIpAddress;
         private int _targetUdpPort;
 
@@ -59,14 +56,14 @@ namespace RailwayPhone
         private TextBlock _outgoingNameText, _outgoingNumberText;
         private TextBlock _talkingStatusText, _talkingNameText, _talkingTimerText;
 
-        // 通話画面のボタン
+        // ボタン
         private Button _muteBtn;
         private Button _speakerBtn;
         private Button _holdBtn;
         private TextBlock _muteBtnLabel;
         private TextBlock _holdBtnLabel;
 
-        // アニメーション用
+        // アニメーション
         private ScaleTransform _incomingPulse, _outgoingPulse, _talkingPulse;
         private Ellipse _talkingIconBg;
 
@@ -77,9 +74,8 @@ namespace RailwayPhone
         private bool _isHolding = false;
         private bool _isMyHold = false;
         private bool _isRemoteHold = false;
-
-        private bool _isMuted = false;      // ミュート状態
-        private bool _isSpeakerOn = false;  // スピーカー出力状態
+        private bool _isMuted = false;
+        private bool _isSpeakerOn = false;
 
         private Random _random = new Random();
 
@@ -89,8 +85,6 @@ namespace RailwayPhone
         private readonly Brush _acceptColor = new SolidColorBrush(Color.FromRgb(30, 180, 50));
         private readonly Brush _holdColor = new SolidColorBrush(Color.FromRgb(255, 140, 0));
         private readonly Brush _bgColor = new SolidColorBrush(Color.FromRgb(240, 244, 248));
-
-        // ボタン状態用カラー
         private readonly Brush _btnActiveBg = new SolidColorBrush(Colors.White);
         private readonly Brush _btnActiveFg = new SolidColorBrush(Colors.Black);
         private readonly Brush _btnInactiveBg = new SolidColorBrush(Colors.Transparent);
@@ -108,8 +102,6 @@ namespace RailwayPhone
 
             _soundManager = new SoundManager();
             _voiceManager = new UdpVoiceManager();
-
-            // 仮設定: スピーカー用デバイス（-1はシステム既定）
             _speakerOutputDevice = new DeviceInfo { ID = "-1", Name = "既定のスピーカー" };
 
             InitializeComponents();
@@ -155,9 +147,15 @@ namespace RailwayPhone
                     if (data == null || !data.ContainsKey("type")) return;
 
                     string type = data["type"];
-                    string fromNumber = data.ContainsKey("from") ? data["from"] : "";
+                    string fromNumber = data.ContainsKey("from") ? data["from"].Trim() : "";
                     string fromIp = data.ContainsKey("from_ip") ? data["from_ip"] : "";
                     int fromPort = data.ContainsKey("udp_port") ? int.Parse(data["udp_port"]) : 0;
+
+                    if (type != "INCOMING" && type != "CANCEL")
+                    {
+                        if (CurrentStatus == PhoneStatus.Idle || CurrentStatus == PhoneStatus.Incoming) return;
+                        if (string.IsNullOrEmpty(_connectedTargetNumber) || _connectedTargetNumber != fromNumber) return;
+                    }
 
                     switch (type)
                     {
@@ -168,11 +166,15 @@ namespace RailwayPhone
                             _targetIpAddress = fromIp; _targetUdpPort = fromPort;
                             HandleRealAnswered(); break;
                         case "HANGUP":
-                            EndCall(playStatusSound: true); break;
+                            EndCall(sendSignal: false, playStatusSound: true); break;
                         case "HOLD_REQUEST":
                             HandleRemoteHold(true); break;
                         case "RESUME_REQUEST":
                             HandleRemoteHold(false); break;
+                        case "CANCEL":
+                            HandleCancel(); break;
+                        case "BUSY":
+                            HandleBusySignal(); break;
                     }
                 }
                 catch { }
@@ -183,7 +185,7 @@ namespace RailwayPhone
 
         private async void StartOutgoingCall()
         {
-            string targetNum = _inputNumberBox.Text;
+            string targetNum = _inputNumberBox.Text.Trim();
             if (string.IsNullOrEmpty(targetNum)) return;
 
             _connectedTargetNumber = targetNum;
@@ -193,13 +195,12 @@ namespace RailwayPhone
             _viewIncoming.Visibility = Visibility.Collapsed; _viewOutgoing.Visibility = Visibility.Visible;
 
             _outgoingNameText.Text = _statusNameText.Text;
+            _outgoingNameText.Foreground = Brushes.Black;
             _outgoingNumberText.Text = targetNum;
 
             StartAnimation(_outgoingPulse, 0.8);
 
-            // ★修正: _currentOutputDevice ではなく _normalOutputDevice を使う
             if (_normalOutputDevice != null) _soundManager.SetOutputDevice(_normalOutputDevice.ID);
-
             _soundManager.Play(SoundManager.FILE_TORI);
             await Task.Delay(800);
 
@@ -212,7 +213,12 @@ namespace RailwayPhone
 
         private void HandleRealIncomingCall(string fromNumber)
         {
-            if (CurrentStatus != PhoneStatus.Idle) return;
+            if (CurrentStatus != PhoneStatus.Idle)
+            {
+                _commManager.SendBusy(fromNumber);
+                return;
+            }
+
             _connectedTargetNumber = fromNumber;
             var caller = PhoneBook.Entries.FirstOrDefault(x => x.Number == fromNumber);
             string callerName = caller != null ? caller.Name : "不明な発信者";
@@ -225,13 +231,39 @@ namespace RailwayPhone
             _incomingNumberText.Text = fromNumber;
             StartAnimation(_incomingPulse, 0.5);
 
-            // ★修正: _normalOutputDevice を使う
             if (_normalOutputDevice != null) _soundManager.SetOutputDevice(_normalOutputDevice.ID);
-
             if (fromNumber.StartsWith("1")) _soundManager.Play(SoundManager.FILE_YOBI2, loop: true);
             else _soundManager.Play(SoundManager.FILE_YOBI1, loop: true);
 
             new ToastContentBuilder().AddText("着信あり").AddText($"{callerName} ({fromNumber})").Show();
+        }
+
+        private async void HandleBusySignal()
+        {
+            // 発信中でなければ無視
+            if (CurrentStatus != PhoneStatus.Outgoing) return;
+
+            // ★重要: 現在の発信相手を記録しておく
+            string busyTarget = _connectedTargetNumber;
+
+            _outgoingNameText.Text = "相手は話し中です";
+            _outgoingNameText.Foreground = Brushes.Red;
+
+            StopAnimation(_outgoingPulse);
+            _soundManager.Stop();
+
+            if (_normalOutputDevice != null) _soundManager.SetOutputDevice(_normalOutputDevice.ID);
+            _soundManager.Play(SoundManager.FILE_WATYU);
+
+            // 5秒待機
+            await Task.Delay(5000);
+
+            // ★重要: 5秒後も「発信中」で、かつ「相手が変わっていない」場合のみ切断する
+            // もしこの5秒の間にユーザーが手動で切って別の相手にかけていたら、CurrentStatusはOutgoingだが相手が違うので切断しない
+            if (CurrentStatus == PhoneStatus.Outgoing && _connectedTargetNumber == busyTarget)
+            {
+                EndCall(sendSignal: false, playStatusSound: false);
+            }
         }
 
         private void AnswerCall()
@@ -249,6 +281,20 @@ namespace RailwayPhone
             {
                 _soundManager.Stop();
                 GoToTalkingScreen(isOutgoing: true);
+            }
+        }
+
+        private void HandleCancel()
+        {
+            if (CurrentStatus == PhoneStatus.Incoming)
+            {
+                StopAnimation(_incomingPulse);
+                _soundManager.Stop();
+                ChangeStatus(PhoneStatus.Idle);
+                _connectedTargetNumber = null;
+
+                _viewIncoming.Visibility = Visibility.Collapsed;
+                _viewKeypad.Visibility = Visibility.Visible;
             }
         }
 
@@ -284,7 +330,6 @@ namespace RailwayPhone
             int inDev = -1, outDevId = -1;
             if (_currentInputDevice != null) int.TryParse(_currentInputDevice.ID, out inDev);
             if (outDevice != null) int.TryParse(outDevice.ID, out outDevId);
-
             _voiceManager.StartTransmission(_targetIpAddress, _targetUdpPort, inDev, outDevId);
         }
 
@@ -298,12 +343,9 @@ namespace RailwayPhone
         private void ToggleSpeaker()
         {
             _isSpeakerOn = !_isSpeakerOn;
-
-            // 出力切り替え
             DeviceInfo targetDev = _isSpeakerOn ? _speakerOutputDevice : _normalOutputDevice;
             int devId = -1;
             if (targetDev != null) int.TryParse(targetDev.ID, out devId);
-
             _voiceManager.ChangeOutputDevice(devId);
             UpdateButtonVisuals();
         }
@@ -311,9 +353,7 @@ namespace RailwayPhone
         private void ToggleHold()
         {
             if (_isRemoteHold) return;
-
             _isMyHold = !_isMyHold;
-
             if (_isMyHold)
             {
                 _commManager.SendHold(_connectedTargetNumber);
@@ -368,7 +408,6 @@ namespace RailwayPhone
             ChangeStatus(PhoneStatus.Talking);
             _isHolding = false;
             _voiceManager.IsMuted = _isMuted;
-
             _soundManager.Stop();
 
             _holdBtn.Background = Brushes.Transparent;
@@ -394,17 +433,14 @@ namespace RailwayPhone
 
                 btn.IsEnabled = isEnabled;
                 btn.Background = isActive ? _btnActiveBg : _btnInactiveBg;
-
                 var fgColor = isActive ? _btnActiveFg : _btnInactiveFg;
                 if (icon != null) icon.Foreground = fgColor;
                 if (text != null) text.Foreground = fgColor;
-
                 btn.BorderBrush = isActive ? Brushes.Transparent : Brushes.LightGray;
             }
 
             SetBtnStyle(_muteBtn, _isMuted);
             SetBtnStyle(_speakerBtn, _isSpeakerOn);
-
             if (_holdBtn != null)
             {
                 var stack = _holdBtn.Content as StackPanel;
@@ -414,17 +450,29 @@ namespace RailwayPhone
             SetBtnStyle(_holdBtn, _isMyHold, !_isRemoteHold);
         }
 
-        private void EndCall(bool playStatusSound = true)
+        private void EndCall(bool sendSignal = true, bool playStatusSound = true)
         {
             _voiceManager.StopTransmission();
-            if (!string.IsNullOrEmpty(_connectedTargetNumber))
+
+            if (sendSignal && !string.IsNullOrEmpty(_connectedTargetNumber))
             {
                 _commManager.SendHangup(_connectedTargetNumber);
-                _connectedTargetNumber = null;
             }
+            _connectedTargetNumber = null;
+
             StopAnimation(_talkingPulse); StopAnimation(_outgoingPulse); StopAnimation(_incomingPulse);
             _callTimer?.Stop();
-            if (playStatusSound) _soundManager.Play(SoundManager.FILE_OKI); else _soundManager.Stop();
+
+            if (playStatusSound)
+            {
+                if (_normalOutputDevice != null) _soundManager.SetOutputDevice(_normalOutputDevice.ID);
+                _soundManager.Play(SoundManager.FILE_OKI);
+            }
+            else
+            {
+                _soundManager.Stop();
+            }
+
             ChangeStatus(PhoneStatus.Idle);
             _viewIncoming.Visibility = Visibility.Collapsed; _viewTalking.Visibility = Visibility.Collapsed;
             _viewOutgoing.Visibility = Visibility.Collapsed; _viewKeypad.Visibility = Visibility.Visible;
@@ -473,10 +521,8 @@ namespace RailwayPhone
 
             var b1 = CreateControlBtn("🔇", "ミュート", (s, e) => ToggleMute(), out _muteBtn, out _muteBtnLabel);
             Grid.SetColumn(b1, 0); buttonGrid.Children.Add(b1);
-
-            var b2 = CreateControlBtn("🔊", "スピーカー", (s, e) => ToggleSpeaker(), out _speakerBtn, out _muteBtnLabel); // Label ref is dummy here
+            var b2 = CreateControlBtn("🔊", "スピーカー", (s, e) => ToggleSpeaker(), out _speakerBtn, out _muteBtnLabel);
             Grid.SetColumn(b2, 1); buttonGrid.Children.Add(b2);
-
             var b3 = CreateControlBtn("⏸", "保 留", (s, e) => ToggleHold(), out _holdBtn, out _holdBtnLabel);
             Grid.SetColumn(b3, 2); buttonGrid.Children.Add(b3);
 

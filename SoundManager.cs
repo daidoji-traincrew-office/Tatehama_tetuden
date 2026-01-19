@@ -1,85 +1,72 @@
 ﻿using System;
 using System.IO;
 using NAudio.Wave;
-using NAudio.CoreAudioApi;
 
 namespace RailwayPhone
 {
     public class SoundManager : IDisposable
     {
-        private IWavePlayer _player;
-        private AudioFileReader _reader;
-        private string _deviceId;
+        // 音声ファイル名定義
+        public const string FILE_YOBI1 = "yobi1.wav";
+        public const string FILE_YOBI2 = "yobi2.wav";
+        public const string FILE_YOBIDASHI = "yobidashi.wav";
+        public const string FILE_TORI = "tori.wav";
+        public const string FILE_OKI = "oki.wav";
+        public const string FILE_HOLD1 = "hold1.wav";
+        public const string FILE_HOLD2 = "hold2.wav";
 
-        // ★ファイル定義を更新
-        public const string FILE_OKI = "Sounds/oki.wav";
-        public const string FILE_TORI = "Sounds/tori.wav";
-        public const string FILE_YOBI1 = "Sounds/yobi1.wav";       // 一般着信
-        public const string FILE_YOBI2 = "Sounds/yobi2.wav";       // 司令着信
-        public const string FILE_YOBIDASHI = "Sounds/yobidashi.wav"; // 発信呼出音
-        public const string FILE_HOLD1 = "Sounds/hold1.wav";       // 保留音1
-        public const string FILE_HOLD2 = "Sounds/hold2.wav";       // 保留音2
+        // ★ここが重要: 話し中音の定義
+        public const string FILE_WATYU = "watyu.wav";
 
-        public void SetOutputDevice(string deviceId)
+        private IWavePlayer _outputDevice;
+        private AudioFileReader _audioFile;
+        private int _currentDeviceId = -1;
+
+        public void SetOutputDevice(string deviceIdStr)
         {
-            _deviceId = deviceId;
+            if (int.TryParse(deviceIdStr, out int id)) _currentDeviceId = id;
+            else _currentDeviceId = -1;
         }
 
         public void Play(string fileName, bool loop = false)
         {
-            try { Stop(); } catch { }
+            Stop();
 
-            if (!File.Exists(fileName)) return;
+            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Sounds", fileName);
+            if (!File.Exists(path)) return;
 
             try
             {
-                if (string.IsNullOrEmpty(_deviceId))
-                {
-                    _player = new WaveOutEvent();
-                }
-                else
-                {
-                    try
-                    {
-                        var mmDevice = new MMDeviceEnumerator().GetDevice(_deviceId);
-                        _player = new WasapiOut(mmDevice, AudioClientShareMode.Shared, true, 200);
-                    }
-                    catch
-                    {
-                        _player = new WaveOutEvent();
-                    }
-                }
-
-                _reader = new AudioFileReader(fileName);
+                _audioFile = new AudioFileReader(path);
 
                 if (loop)
                 {
-                    // 1秒の無音間隔付きループ
-                    var loopStream = new LoopStream(_reader, 1000);
-                    _player.Init(loopStream);
+                    var loopStream = new LoopStream(_audioFile);
+                    _outputDevice = new WaveOutEvent { DeviceNumber = _currentDeviceId };
+                    _outputDevice.Init(loopStream);
                 }
                 else
                 {
-                    _player.Init(_reader);
+                    _outputDevice = new WaveOutEvent { DeviceNumber = _currentDeviceId };
+                    _outputDevice.Init(_audioFile);
                 }
 
-                _player.Play();
+                _outputDevice.Play();
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"音声再生エラー: {ex.Message}");
-                try { Stop(); } catch { }
+                System.Diagnostics.Debug.WriteLine($"Sound Error: {ex.Message}");
             }
         }
 
         public void Stop()
         {
-            try
-            {
-                if (_player != null) { _player.Stop(); _player.Dispose(); _player = null; }
-                if (_reader != null) { _reader.Dispose(); _reader = null; }
-            }
-            catch { }
+            _outputDevice?.Stop();
+            _outputDevice?.Dispose();
+            _outputDevice = null;
+
+            _audioFile?.Dispose();
+            _audioFile = null;
         }
 
         public void Dispose()
@@ -88,54 +75,27 @@ namespace RailwayPhone
         }
     }
 
-    // LoopStreamクラスは変更なし（前回のままでOKですが、セットで載せておきます）
+    // ループ再生用ヘルパー
     public class LoopStream : WaveStream
     {
-        WaveStream sourceStream;
-        private long _delayBytes;
-        private long _delayBytesRead;
-        private bool _inDelay;
-
-        public LoopStream(WaveStream sourceStream, int delayMilliseconds = 0)
-        {
-            this.sourceStream = sourceStream;
-            this.EnableLooping = true;
-            _delayBytes = (sourceStream.WaveFormat.AverageBytesPerSecond * delayMilliseconds) / 1000;
-            _delayBytesRead = 0;
-            _inDelay = false;
-        }
-
+        private WaveStream sourceStream;
+        public LoopStream(WaveStream sourceStream) { this.sourceStream = sourceStream; this.EnableLooping = true; }
         public bool EnableLooping { get; set; }
         public override WaveFormat WaveFormat => sourceStream.WaveFormat;
         public override long Length => sourceStream.Length;
-        public override long Position
-        {
-            get => sourceStream.Position;
-            set { sourceStream.Position = value; _inDelay = false; _delayBytesRead = 0; }
-        }
-
+        public override long Position { get => sourceStream.Position; set => sourceStream.Position = value; }
         public override int Read(byte[] buffer, int offset, int count)
         {
             int totalBytesRead = 0;
             while (totalBytesRead < count)
             {
-                if (!_inDelay)
+                int bytesRead = sourceStream.Read(buffer, offset + totalBytesRead, count - totalBytesRead);
+                if (bytesRead == 0)
                 {
-                    int bytesRead = sourceStream.Read(buffer, offset + totalBytesRead, count - totalBytesRead);
-                    if (bytesRead == 0)
-                    {
-                        if (sourceStream.Position == 0 || !EnableLooping) break;
-                        _inDelay = true; _delayBytesRead = 0; continue;
-                    }
-                    totalBytesRead += bytesRead;
+                    if (sourceStream.Position == 0 || !EnableLooping) break;
+                    sourceStream.Position = 0;
                 }
-                else
-                {
-                    long bytesToRead = Math.Min(count - totalBytesRead, _delayBytes - _delayBytesRead);
-                    Array.Clear(buffer, offset + totalBytesRead, (int)bytesToRead);
-                    _delayBytesRead += bytesToRead; totalBytesRead += (int)bytesToRead;
-                    if (_delayBytesRead >= _delayBytes) { _inDelay = false; sourceStream.Position = 0; }
-                }
+                totalBytesRead += bytesRead;
             }
             return totalBytesRead;
         }
