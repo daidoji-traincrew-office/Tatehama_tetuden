@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Collections.Generic; // 辞書用
 
 namespace RailwayPhone
 {
@@ -28,7 +29,6 @@ namespace RailwayPhone
             catch { return false; }
         }
 
-        // 基本送信
         public void SendMessage(object data)
         {
             if (!_isConnected) return;
@@ -41,33 +41,39 @@ namespace RailwayPhone
             catch { _isConnected = false; }
         }
 
-        // --- ★ここから機能追加 ---
-
-        // ログイン (場所変更時もこれを使う)
+        // ログイン
         public void SendLogin(string myNumber)
         {
             SendMessage(new { type = "LOGIN", number = myNumber });
         }
 
-        // 発信 (相手の番号を指定)
-        public void SendCall(string targetNumber)
+        // 発信 (自分の音声ポート番号 udpPort を一緒に送る)
+        public void SendCall(string targetNumber, int udpPort)
         {
-            SendMessage(new { type = "CALL", target = targetNumber });
+            SendMessage(new
+            {
+                type = "CALL",
+                target = targetNumber,
+                udp_port = udpPort.ToString() // サーバー経由で相手に届く
+            });
         }
 
-        // 応答 (相手に応答したことを伝える)
-        public void SendAnswer(string targetNumber)
+        // 応答 (自分の音声ポート番号 udpPort を一緒に送る)
+        public void SendAnswer(string targetNumber, int udpPort)
         {
-            SendMessage(new { type = "ANSWER", target = targetNumber });
+            SendMessage(new
+            {
+                type = "ANSWER",
+                target = targetNumber,
+                udp_port = udpPort.ToString()
+            });
         }
 
-        // 切断 (相手に切ったことを伝える)
+        // 切断
         public void SendHangup(string targetNumber)
         {
             SendMessage(new { type = "HANGUP", target = targetNumber });
         }
-
-        // --- ここまで ---
 
         private async Task ReceiveLoop()
         {
@@ -78,7 +84,8 @@ namespace RailwayPhone
                 {
                     int bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length);
                     if (bytesRead == 0) break;
-                    // 受信データが連結している可能性を考慮して分割処理等は省略（簡易実装）
+
+                    // JSONが複数くっついている場合の簡易対応などは今回は省略
                     string json = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                     MessageReceived?.Invoke(json);
                 }
