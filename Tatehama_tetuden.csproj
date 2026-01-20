@@ -10,9 +10,23 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+	  <None Remove="Protos\voice.proto" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2" />
+		<PackageReference Include="Google.Protobuf" Version="3.33.4" />
+		<PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
+		<PackageReference Include="Grpc.Tools" Version="2.76.0">
+		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		  <PrivateAssets>all</PrivateAssets>
+		</PackageReference>
 		<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.2" />
 		<PackageReference Include="NAudio" Version="2.2.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Protobuf Include="Protos\voice.proto" GrpcServices="Client" />
 	</ItemGroup>
 
 	<ItemGroup>

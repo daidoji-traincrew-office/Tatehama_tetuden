@@ -1,0 +1,2 @@
+obj\Debug\net8.0-windows10.0.19041.0\Protos/Voice.cs \
+obj\Debug\net8.0-windows10.0.19041.0\Protos/VoiceGrpc.cs: Protos/voice.proto

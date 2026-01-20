@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option csharp_namespace = "RailwayPhone.Protos";
+
+package voice;
+
+// 音声ストリーミングサービス定義
+service VoiceRelay {
+  // 双方向ストリーミング (Bidirectional Streaming)
+  // クライアントは接続し続け、音声を送り、同時に音声を受け取る
+  rpc JoinSession (stream VoiceData) returns (stream VoiceData);
+}
+
+// 音声データパケット
+message VoiceData {
+  string client_id = 1;      // 送信者のID (SignalRのConnectionIDなどを流用)
+  string target_id = 2;      // 送信先のID
+  bytes audio_content = 3;   // 音声データ (MuLaw圧縮済みバイト列)
+}

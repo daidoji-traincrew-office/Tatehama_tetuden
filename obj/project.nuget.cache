@@ -1,10 +1,15 @@
 {
   "version": 2,
-  "dgSpecHash": "jCT5wOkM9a0=",
+  "dgSpecHash": "LMDa5a3dsUc=",
   "success": true,
   "projectFilePath": "C:\\Users\\user\\source\\repos\\Tatehama_tetuden\\Tatehama_tetuden.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\user\\.nuget\\packages\\communitytoolkit.winui.notifications\\7.1.2\\communitytoolkit.winui.notifications.7.1.2.nupkg.sha512",
+    "C:\\Users\\user\\.nuget\\packages\\google.protobuf\\3.33.4\\google.protobuf.3.33.4.nupkg.sha512",
+    "C:\\Users\\user\\.nuget\\packages\\grpc.core.api\\2.76.0\\grpc.core.api.2.76.0.nupkg.sha512",
+    "C:\\Users\\user\\.nuget\\packages\\grpc.net.client\\2.76.0\\grpc.net.client.2.76.0.nupkg.sha512",
+    "C:\\Users\\user\\.nuget\\packages\\grpc.net.common\\2.76.0\\grpc.net.common.2.76.0.nupkg.sha512",
+    "C:\\Users\\user\\.nuget\\packages\\grpc.tools\\2.76.0\\grpc.tools.2.76.0.nupkg.sha512",
     "C:\\Users\\user\\.nuget\\packages\\microsoft.aspnetcore.connections.abstractions\\10.0.2\\microsoft.aspnetcore.connections.abstractions.10.0.2.nupkg.sha512",
     "C:\\Users\\user\\.nuget\\packages\\microsoft.aspnetcore.http.connections.client\\10.0.2\\microsoft.aspnetcore.http.connections.client.10.0.2.nupkg.sha512",
     "C:\\Users\\user\\.nuget\\packages\\microsoft.aspnetcore.http.connections.common\\10.0.2\\microsoft.aspnetcore.http.connections.common.10.0.2.nupkg.sha512",
