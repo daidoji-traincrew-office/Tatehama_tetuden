@@ -17,7 +17,7 @@ namespace RailwayPhone
         public event Action<string> HangupReceived;
         public event Action<string> CancelReceived;
 
-        // ★追加: 拒否信号イベント
+        // ★ここが重要: 拒否信号イベント
         public event Action<string> RejectReceived;
 
         public event Action BusyReceived;
@@ -85,7 +85,7 @@ namespace RailwayPhone
                             case "ANSWERED": AnswerReceived?.Invoke(Get("responder_id")); break;
                             case "HANGUP": HangupReceived?.Invoke(fromId); break;
                             case "CANCEL": CancelReceived?.Invoke(fromId); break;
-                            case "REJECT": RejectReceived?.Invoke(fromId); break; // ★追加
+                            case "REJECT": RejectReceived?.Invoke(fromId); break; // ★ここ
                             case "BUSY": BusyReceived?.Invoke(); break;
                             case "HOLD_REQUEST": HoldReceived?.Invoke(); break;
                             case "RESUME_REQUEST": ResumeReceived?.Invoke(); break;
@@ -100,7 +100,7 @@ namespace RailwayPhone
         public async void SendCall(string targetNumber) { if (IsConnected) await _hubConnection.InvokeAsync("Call", targetNumber); }
         public async void SendAnswer(string targetNumber, string callerId) { if (IsConnected) await _hubConnection.InvokeAsync("Answer", targetNumber, callerId); }
 
-        // ★追加: 拒否信号送信
+        // ★ここ: 拒否信号送信メソッド
         public async void SendReject(string callerId) { if (IsConnected) await _hubConnection.InvokeAsync("Reject", callerId); }
 
         public async void SendHangup(string targetId) { if (IsConnected) await _hubConnection.InvokeAsync("Hangup", targetId); }

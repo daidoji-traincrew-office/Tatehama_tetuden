@@ -64,6 +64,10 @@ namespace RailwayPhone
         private TextBox _inputNumberBox;
         private Button _muteBtn, _speakerBtn, _holdBtn;
         private TextBlock _muteBtnLabel, _holdBtnLabel;
+
+        // ★追加: 色を変更するために発信ボタンをフィールド化
+        private Button _callBtn;
+
         private ScaleTransform _incomingPulse, _outgoingPulse, _talkingPulse;
         private Ellipse _talkingIconBg;
 
@@ -145,30 +149,8 @@ namespace RailwayPhone
             });
         }
 
-        private void SetOfflineState()
-        {
-            Title = $"[圏外] {_currentStation.Name}";
-            Background = _offlineBgColor;
-            if (_selfStationDisplay != null)
-            {
-                _selfStationDisplay.Text = "圏外";
-                _selfStationDisplay.Foreground = Brushes.Gray;
-                _selfStationDisplay.Background = Brushes.Transparent;
-            }
-        }
-
-        private void SetOnlineState()
-        {
-            Title = $"館浜電鉄 鉄道電話 - [{_currentStation.Name}]";
-            Background = _bgColor;
-            if (_selfStationDisplay != null)
-            {
-                _selfStationDisplay.Text = $"自局: {_currentStation.Name} ({_currentStation.Number})";
-                _selfStationDisplay.Foreground = _primaryColor;
-                _selfStationDisplay.Background = new SolidColorBrush(Color.FromRgb(230, 240, 255));
-            }
-        }
-
+        private void SetOfflineState() { Title = $"[圏外] {_currentStation.Name}"; Background = _offlineBgColor; if (_selfStationDisplay != null) { _selfStationDisplay.Text = "圏外"; _selfStationDisplay.Foreground = Brushes.Gray; _selfStationDisplay.Background = Brushes.Transparent; } }
+        private void SetOnlineState() { Title = $"館浜電鉄 鉄道電話 - [{_currentStation.Name}]"; Background = _bgColor; if (_selfStationDisplay != null) { _selfStationDisplay.Text = $"自局: {_currentStation.Name} ({_currentStation.Number})"; _selfStationDisplay.Foreground = _primaryColor; _selfStationDisplay.Background = new SolidColorBrush(Color.FromRgb(230, 240, 255)); } }
         private void ChangeStatus(PhoneStatus s) => CurrentStatus = s;
 
         // --- 通話ロジック ---
@@ -214,8 +196,7 @@ namespace RailwayPhone
 
             if (_viewIncoming is FrameworkElement fe) fe.Tag = new Tuple<string, int>("", 0);
 
-            ChangeStatus(PhoneStatus.Incoming);
-            SwitchView(_viewIncoming);
+            ChangeStatus(PhoneStatus.Incoming); SwitchView(_viewIncoming);
             _incomingNameText.Text = name; _incomingNumberText.Text = fromNumber;
             StartAnimation(_incomingPulse, 0.5);
             _soundManager.Play(SoundManager.FILE_YOBI1, loop: true, loopIntervalMs: 1000);
@@ -245,10 +226,7 @@ namespace RailwayPhone
         {
             int inDev = -1, outDevId = -1;
             if (_currentInputDevice != null) int.TryParse(_currentInputDevice.ID, out inDev);
-
-            // ★修正箇所: 変数名を outDevId に統一
             if (_normalOutputDevice != null) int.TryParse(_normalOutputDevice.ID, out outDevId);
-
             _voiceManager.StartTransmission(_myConnectionId, targetId, SERVER_IP, SERVER_GRPC_PORT, inDev, outDevId);
         }
 
@@ -265,13 +243,17 @@ namespace RailwayPhone
         {
             if (CurrentStatus != PhoneStatus.Outgoing) return;
             _outgoingNameText.Text = "事情によりお繋ぎできません"; _outgoingNameText.Foreground = Brushes.Red;
-            StopAnimation(_outgoingPulse); _soundManager.Stop(); _soundManager.Play(SoundManager.FILE_WATYU);
+            StopAnimation(_outgoingPulse);
+            _soundManager.Stop();
+            if (_normalOutputDevice != null) _soundManager.SetOutputDevice(_normalOutputDevice.ID);
+            _soundManager.Play(SoundManager.FILE_WATYU);
             await Task.Delay(5000);
             if (CurrentStatus == PhoneStatus.Outgoing) EndCall(false, false);
         }
 
         private void EndCall(bool sendSignal = true, bool playSound = true)
         {
+            // ★修正: 着信中の切断は「着信拒否」として送信 (true)
             if (CurrentStatus == PhoneStatus.Incoming && sendSignal && !string.IsNullOrEmpty(_targetConnectionId))
             {
                 _commManager.SendReject(_targetConnectionId);
@@ -282,15 +264,9 @@ namespace RailwayPhone
             }
 
             _voiceManager.StopTransmission();
-
-            _connectedTargetNumber = null;
-            _targetConnectionId = null;
-
-            StopAnimation(_talkingPulse);
-            StopAnimation(_outgoingPulse);
-            StopAnimation(_incomingPulse);
+            _connectedTargetNumber = null; _targetConnectionId = null;
+            StopAnimation(_talkingPulse); StopAnimation(_outgoingPulse); StopAnimation(_incomingPulse);
             _callTimer?.Stop();
-
             if (playSound)
             {
                 if (_normalOutputDevice != null) _soundManager.SetOutputDevice(_normalOutputDevice.ID);
@@ -298,11 +274,11 @@ namespace RailwayPhone
             }
             else _soundManager.Stop();
 
-            ChangeStatus(PhoneStatus.Idle);
-            SwitchView(_viewKeypad);
-            _inputNumberBox.Text = "";
-            _statusNameText.Text = "宛先未指定";
-            _statusNameText.Foreground = Brushes.Gray;
+            ChangeStatus(PhoneStatus.Idle); SwitchView(_viewKeypad);
+            _inputNumberBox.Text = ""; _statusNameText.Text = "宛先未指定"; _statusNameText.Foreground = Brushes.Gray;
+
+            // ★リセット時に発信ボタンを青に戻す
+            if (_callBtn != null) _callBtn.Background = _primaryColor;
         }
 
         // --- 通話中機能 ---
@@ -346,12 +322,11 @@ namespace RailwayPhone
         }
         private void HandleRemoteHold(bool isHold) { _isRemoteHold = isHold; if (isHold) StartHoldState(false); else StopHoldState(); UpdateButtonVisuals(); }
 
-        private void StartHoldState(bool isSelfInitiated)
+        private void StartHoldState(bool self)
         {
             ChangeStatus(PhoneStatus.Holding); _isHolding = true; _voiceManager.IsMuted = true;
             _soundManager.Play(SoundManager.FILE_HOLD1, true);
-            _talkingStatusText.Text = isSelfInitiated ? "保留中" : "相手が保留";
-            StopAnimation(_talkingPulse);
+            _talkingStatusText.Text = self ? "保留中" : "相手が保留"; StopAnimation(_talkingPulse);
         }
         private void StopHoldState()
         {
@@ -361,19 +336,15 @@ namespace RailwayPhone
 
         private void UpdateButtonVisuals()
         {
-            void SetBtnStyle(Button btn, bool isActive, bool isEnabled = true)
+            void Set(Button b, bool active) { if (b == null) return; b.Background = active ? _btnActiveBg : _btnInactiveBg; }
+            Set(_muteBtn, _isMuted); Set(_speakerBtn, _isSpeakerOn);
+            if (_holdBtn != null)
             {
-                if (btn == null) return;
-                btn.IsEnabled = isEnabled;
-                btn.Background = isActive ? _btnActiveBg : _btnInactiveBg;
-                var stack = btn.Content as StackPanel;
-                if (stack != null) foreach (var child in stack.Children) if (child is TextBlock t) t.Foreground = isActive ? _btnActiveFg : _btnInactiveFg;
-                btn.BorderBrush = isActive ? Brushes.Transparent : Brushes.LightGray;
+                var stack = _holdBtn.Content as StackPanel;
+                var text = stack?.Children[1] as TextBlock;
+                if (text != null) text.Text = _isMyHold ? "再 開" : "保 留";
             }
-            SetBtnStyle(_muteBtn, _isMuted);
-            SetBtnStyle(_speakerBtn, _isSpeakerOn);
-            if (_holdBtnLabel != null) _holdBtnLabel.Text = _isMyHold ? "再 開" : "保 留";
-            SetBtnStyle(_holdBtn, _isMyHold, !_isRemoteHold);
+            Set(_holdBtn, _isMyHold);
         }
 
         // --- ヘルパーメソッド ---
@@ -389,8 +360,10 @@ namespace RailwayPhone
             return g;
         }
 
+        // アイコン生成ヘルパー (位置調整版)
         private object GetPhoneIcon(bool isHangUp)
         {
+            var grid = new Grid { Width = 40, Height = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             var tb = new TextBlock
             {
                 Text = "📞",
@@ -399,13 +372,18 @@ namespace RailwayPhone
                 Foreground = Brushes.White,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
-                RenderTransformOrigin = new Point(0.5, 0.5)
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                TextAlignment = TextAlignment.Center
             };
+
             if (isHangUp)
             {
                 tb.RenderTransform = new RotateTransform(135);
+                tb.Margin = new Thickness(0, 5, 0, 0);
             }
-            return tb;
+
+            grid.Children.Add(tb);
+            return grid;
         }
 
         private void SwitchView(UIElement visibleView)
@@ -460,10 +438,19 @@ namespace RailwayPhone
         private void OnInputNumberChanged(object s, TextChangedEventArgs e)
         {
             string cur = _inputNumberBox.Text;
-            if (string.IsNullOrWhiteSpace(cur)) { _statusNameText.Text = "宛先未指定"; _statusNameText.Foreground = Brushes.Gray; return; }
-            var m = PhoneBook.Entries.FirstOrDefault(x => x.Number == cur);
-            if (m != null) { _statusNameText.Text = m.Name; _statusNameText.Foreground = Brushes.Black; _phoneBookList.SelectedItem = m; _phoneBookList.ScrollIntoView(m); }
-            else { _statusNameText.Text = "未登録の番号"; _statusNameText.Foreground = Brushes.Gray; _phoneBookList.SelectedItem = null; }
+            if (string.IsNullOrWhiteSpace(cur)) { _statusNameText.Text = "宛先未指定"; _statusNameText.Foreground = Brushes.Gray; }
+            else
+            {
+                var m = PhoneBook.Entries.FirstOrDefault(x => x.Number == cur);
+                if (m != null) { _statusNameText.Text = m.Name; _statusNameText.Foreground = Brushes.Black; _phoneBookList.SelectedItem = m; _phoneBookList.ScrollIntoView(m); }
+                else { _statusNameText.Text = "未登録の番号"; _statusNameText.Foreground = Brushes.Gray; _phoneBookList.SelectedItem = null; }
+            }
+
+            // ★追加: 番号が入力されたら発信ボタンを緑色にする
+            if (_callBtn != null)
+            {
+                _callBtn.Background = cur.Length > 0 ? _acceptColor : _primaryColor;
+            }
         }
 
         // --- UI生成コード ---
@@ -500,7 +487,7 @@ namespace RailwayPhone
             _phoneBookList = new ListView { Background = Brushes.Transparent, BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch };
             ScrollViewer.SetHorizontalScrollBarVisibility(_phoneBookList, ScrollBarVisibility.Disabled);
 
-            // --- ListView Template ---
+            // --- ListView Template (復旧) ---
             var itemTemplate = new DataTemplate();
             var fb = new FrameworkElementFactory(typeof(Border));
             fb.SetValue(Border.BackgroundProperty, Brushes.White);
@@ -594,76 +581,26 @@ namespace RailwayPhone
         {
             var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Width = 280 };
 
-            _selfStationDisplay = new TextBlock
-            {
-                Text = $"自局: {_currentStation.Name} ({_currentStation.Number})",
-                FontSize = 14,
-                FontWeight = FontWeights.Bold,
-                Foreground = _primaryColor,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 30),
-                Background = new SolidColorBrush(Color.FromRgb(230, 240, 255)),
-                Padding = new Thickness(10, 5, 10, 5)
-            };
-            p.Children.Add(_selfStationDisplay);
-
-            _statusNameText = new TextBlock
-            {
-                Text = "宛先未指定",
-                FontSize = 20,
-                FontWeight = FontWeights.Light,
-                Foreground = Brushes.Gray,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 20)
-            };
-            p.Children.Add(_statusNameText);
-
-            _inputNumberBox = new TextBox
-            {
-                Text = "",
-                FontSize = 36,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.Black,
-                HorizontalContentAlignment = HorizontalAlignment.Center,
-                BorderThickness = new Thickness(0, 0, 0, 2),
-                BorderBrush = _primaryColor,
-                Background = Brushes.Transparent,
-                Margin = new Thickness(0, 0, 0, 30),
-                FontFamily = new FontFamily("Consolas")
-            };
-            _inputNumberBox.TextChanged += OnInputNumberChanged;
-            p.Children.Add(_inputNumberBox);
+            _selfStationDisplay = new TextBlock { Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 30), FontWeight = FontWeights.Bold, Background = new SolidColorBrush(Color.FromRgb(230, 240, 255)), Padding = new Thickness(10, 5, 10, 5) }; p.Children.Add(_selfStationDisplay);
+            _statusNameText = new TextBlock { Text = "宛先未指定", FontSize = 20, HorizontalAlignment = HorizontalAlignment.Center, FontWeight = FontWeights.Light, Foreground = Brushes.Gray, Margin = new Thickness(0, 0, 0, 20) }; p.Children.Add(_statusNameText);
+            _inputNumberBox = new TextBox { FontSize = 36, HorizontalContentAlignment = HorizontalAlignment.Center, FontWeight = FontWeights.Bold, BorderThickness = new Thickness(0, 0, 0, 2), BorderBrush = _primaryColor, Background = Brushes.Transparent, Margin = new Thickness(0, 0, 0, 30) }; _inputNumberBox.TextChanged += OnInputNumberChanged; p.Children.Add(_inputNumberBox);
 
             var kg = new Grid { Margin = new Thickness(0, 0, 0, 30), HorizontalAlignment = HorizontalAlignment.Center };
             for (int i = 0; i < 3; i++) kg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
             for (int i = 0; i < 4; i++) kg.RowDefinitions.Add(new RowDefinition { Height = new GridLength(70) });
+            int n = 1; for (int r = 0; r < 3; r++) for (int c = 0; c < 3; c++) { var b = CreateDialButton(n++.ToString()); Grid.SetRow(b, r); Grid.SetColumn(b, c); kg.Children.Add(b); }
+            var b0 = CreateDialButton("0"); Grid.SetRow(b0, 3); Grid.SetColumn(b0, 1); kg.Children.Add(b0);
 
-            int num = 1;
-            for (int row = 0; row < 3; row++)
-            {
-                for (int col = 0; col < 3; col++)
-                {
-                    var btn = CreateDialButton(num.ToString());
-                    Grid.SetRow(btn, row); Grid.SetColumn(btn, col);
-                    kg.Children.Add(btn);
-                    num++;
-                }
-            }
-            var bs = CreateDialButton("*"); Grid.SetRow(bs, 3); Grid.SetColumn(bs, 0); kg.Children.Add(bs);
-            var bz = CreateDialButton("0"); Grid.SetRow(bz, 3); Grid.SetColumn(bz, 1); kg.Children.Add(bz);
-
-            var bd = new Button { Content = "⌫", FontSize = 20, FontWeight = FontWeights.Bold, Background = Brushes.WhiteSmoke, Foreground = Brushes.DimGray, BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1), Margin = new Thickness(5), Cursor = System.Windows.Input.Cursors.Hand };
-            var ds = new Style(typeof(Border)); ds.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); bd.Resources.Add(typeof(Border), ds);
-            bd.Click += (s, e) => { if (_inputNumberBox.Text.Length > 0) _inputNumberBox.Text = _inputNumberBox.Text.Substring(0, _inputNumberBox.Text.Length - 1); };
-            Grid.SetRow(bd, 3); Grid.SetColumn(bd, 2); kg.Children.Add(bd);
+            // ★修正: 取消ボタンを「⌫」に戻し、丸いスタイルを適用
+            var bBS = new Button { Content = "⌫", FontSize = 24, FontWeight = FontWeights.Bold, Background = Brushes.WhiteSmoke, Foreground = Brushes.DimGray, BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1), Margin = new Thickness(5), Cursor = System.Windows.Input.Cursors.Hand };
+            var sBS = new Style(typeof(Border)); sBS.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); bBS.Resources.Add(typeof(Border), sBS);
+            bBS.Click += (s, e) => { if (_inputNumberBox.Text.Length > 0) _inputNumberBox.Text = _inputNumberBox.Text.Substring(0, _inputNumberBox.Text.Length - 1); }; Grid.SetRow(bBS, 3); Grid.SetColumn(bBS, 2); kg.Children.Add(bBS);
             p.Children.Add(kg);
 
-            var cb = new Button { Content = GetPhoneIcon(false), Height = 50, Background = _primaryColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand, Margin = new Thickness(10, 0, 10, 0) };
-            var cs = new Style(typeof(Border)); cs.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(25))); cb.Resources.Add(typeof(Border), cs);
-            cb.Click += (s, e) => StartOutgoingCall();
-            p.Children.Add(cb);
+            // ★修正: 発信ボタンをフィールド変数 _callBtn に代入
+            _callBtn = new Button { Content = GetPhoneIcon(false), Height = 50, Background = _primaryColor, Foreground = Brushes.White, Margin = new Thickness(10, 0, 10, 0) };
+            var sC = new Style(typeof(Border)); sC.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(25))); _callBtn.Resources.Add(typeof(Border), sC);
+            _callBtn.Click += (s, e) => StartOutgoingCall(); p.Children.Add(_callBtn);
             return p;
         }
 
@@ -672,24 +609,20 @@ namespace RailwayPhone
             var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
             p.Children.Add(new TextBlock { Text = "着信中...", FontSize = 16, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) });
             p.Children.Add(CreatePulsingIcon(_primaryColor, out _incomingPulse));
-            _incomingNameText = new TextBlock { Text = "---", FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) };
-            p.Children.Add(_incomingNameText);
-            _incomingNumberText = new TextBlock { Text = "---", FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) };
-            p.Children.Add(_incomingNumberText);
+            _incomingNameText = new TextBlock { FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) }; p.Children.Add(_incomingNameText);
+            _incomingNumberText = new TextBlock { FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) }; p.Children.Add(_incomingNumberText);
 
-            var bg = new Grid { Width = 300 };
-            bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
-            bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var bg = new Grid { Width = 300 }; bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) }); bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            var ab = new Button { Content = GetPhoneIcon(false), Height = 60, Background = _acceptColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
-            var @as = new Style(typeof(Border)); @as.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); ab.Resources.Add(typeof(Border), @as);
-            ab.Click += (s, e) => AnswerCall();
-            Grid.SetColumn(ab, 0); bg.Children.Add(ab);
+            var ansBtn = new Button { Content = GetPhoneIcon(false), Height = 60, Background = _acceptColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
+            var sA = new Style(typeof(Border)); sA.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); ansBtn.Resources.Add(typeof(Border), sA);
+            ansBtn.Click += (s, e) => AnswerCall(); Grid.SetColumn(ansBtn, 0); bg.Children.Add(ansBtn);
 
             var rb = new Button { Content = GetPhoneIcon(true), Height = 60, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
-            var rs = new Style(typeof(Border)); rs.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); rb.Resources.Add(typeof(Border), rs);
-            rb.Click += (s, e) => EndCall(false);
+            var sR = new Style(typeof(Border)); sR.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); rb.Resources.Add(typeof(Border), sR);
+
+            // ★重要修正: 着信拒否 (true)
+            rb.Click += (s, e) => EndCall(true);
             Grid.SetColumn(rb, 2); bg.Children.Add(rb);
             p.Children.Add(bg);
             return p;
@@ -700,34 +633,23 @@ namespace RailwayPhone
             var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
             p.Children.Add(new TextBlock { Text = "呼び出し中...", FontSize = 16, Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 10) });
             p.Children.Add(CreatePulsingIcon(_primaryColor, out _outgoingPulse));
-            _outgoingNameText = new TextBlock { Text = "---", FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) };
-            p.Children.Add(_outgoingNameText);
-            _outgoingNumberText = new TextBlock { Text = "---", FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) };
-            p.Children.Add(_outgoingNumberText);
+            _outgoingNameText = new TextBlock { FontSize = 32, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) }; p.Children.Add(_outgoingNameText);
+            _outgoingNumberText = new TextBlock { FontSize = 24, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 50) }; p.Children.Add(_outgoingNumberText);
 
-            var cb = new Button { Content = GetPhoneIcon(true), Width = 200, Height = 60, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
-            var cs = new Style(typeof(Border)); cs.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); cb.Resources.Add(typeof(Border), cs);
-            cb.Click += (s, e) => EndCall(true);
-            p.Children.Add(cb);
+            var cancelBtn = new Button { Content = GetPhoneIcon(true), Width = 200, Height = 60, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
+            var sC = new Style(typeof(Border)); sC.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); cancelBtn.Resources.Add(typeof(Border), sC);
+            cancelBtn.Click += (s, e) => EndCall(true); p.Children.Add(cancelBtn);
             return p;
         }
 
         private UIElement CreateTalkingView()
         {
             var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            var ip = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            var ig = CreatePulsingIcon(_acceptColor, out _talkingPulse);
-            _talkingIconBg = ig.Children.OfType<Ellipse>().FirstOrDefault();
-            ip.Children.Add(ig);
-            _talkingStatusText = new TextBlock { Text = "通話中", FontSize = 16, Foreground = _acceptColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 5) };
-            ip.Children.Add(_talkingStatusText);
-            _talkingNameText = new TextBlock { Text = "---", FontSize = 28, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 5) };
-            ip.Children.Add(_talkingNameText);
-            _talkingTimerText = new TextBlock { Text = "00:00", FontSize = 20, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.DimGray, HorizontalAlignment = HorizontalAlignment.Center };
-            ip.Children.Add(_talkingTimerText);
-            p.Children.Add(ip);
+            var ig = CreatePulsingIcon(_acceptColor, out _talkingPulse); _talkingIconBg = (Ellipse)ig.Children[0]; p.Children.Add(ig);
+            _talkingStatusText = new TextBlock { Text = "通話中", FontSize = 16, Foreground = _acceptColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 5) }; p.Children.Add(_talkingStatusText);
+            _talkingNameText = new TextBlock { FontSize = 28, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 5) }; p.Children.Add(_talkingNameText);
+            _talkingTimerText = new TextBlock { FontSize = 20, FontFamily = new FontFamily("Consolas"), Foreground = Brushes.DimGray, HorizontalAlignment = HorizontalAlignment.Center }; p.Children.Add(_talkingTimerText);
 
-            // ★Grid (bg) を定義
             var bg = new Grid { Margin = new Thickness(20), VerticalAlignment = VerticalAlignment.Center };
             for (int i = 0; i < 3; i++) bg.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -747,10 +669,9 @@ namespace RailwayPhone
             var b3 = CreateControlBtn("⏸", "保 留", (s, e) => ToggleHold(), out _holdBtn, out _holdBtnLabel); Grid.SetColumn(b3, 2); bg.Children.Add(b3);
             p.Children.Add(bg);
 
-            var eb = new Button { Content = GetPhoneIcon(true), Width = 80, Height = 80, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand, Margin = new Thickness(0, 0, 0, 20) };
-            var es = new Style(typeof(Border)); es.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(40))); eb.Resources.Add(typeof(Border), es);
-            eb.Click += (s, e) => EndCall(true);
-            p.Children.Add(eb);
+            var endBtn = new Button { Content = GetPhoneIcon(true), Width = 80, Height = 80, Background = _dangerColor, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 20), Cursor = System.Windows.Input.Cursors.Hand };
+            var sE = new Style(typeof(Border)); sE.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(40))); endBtn.Resources.Add(typeof(Border), sE);
+            endBtn.Click += (s, e) => EndCall(true); p.Children.Add(endBtn);
             return p;
         }
 
@@ -758,8 +679,7 @@ namespace RailwayPhone
         {
             var b = new Button { Content = t, FontSize = 24, FontWeight = FontWeights.SemiBold, Background = Brushes.White, Foreground = Brushes.DarkSlateGray, BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1), Margin = new Thickness(5), Cursor = System.Windows.Input.Cursors.Hand };
             var s = new Style(typeof(Border)); s.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); b.Resources.Add(typeof(Border), s);
-            b.Click += (o, e) => { _inputNumberBox.Text += t; _inputNumberBox.CaretIndex = _inputNumberBox.Text.Length; _inputNumberBox.Focus(); };
-            return b;
+            b.Click += (o, e) => { _inputNumberBox.Text += t; _inputNumberBox.CaretIndex = _inputNumberBox.Text.Length; _inputNumberBox.Focus(); }; return b;
         }
     }
 }
