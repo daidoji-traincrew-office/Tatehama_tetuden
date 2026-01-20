@@ -3,52 +3,39 @@ using System.Windows;
 
 namespace RailwayPhone
 {
-    // アプリケーションの起動ロジックを管理するクラス
+    // アプリケーションの起動ロジックのみを管理するクラス
     public class Program : Application
     {
-        // アプリのエントリーポイント（ここから始まります）
+        // アプリのエントリーポイント
         [STAThread]
         public static void Main()
         {
-            // 1. アプリケーションのインスタンスを作成
             var app = new Program();
 
-            // 「自局選択画面」を閉じたときにアプリまで終了しないように設定
+            // 自局選択画面を閉じてもアプリが終了しないように設定
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             try
             {
-                // 2. 自局選択ウィンドウを表示
+                // 1. 自局選択ウィンドウを表示
                 var selectionWindow = new StationSelectionWindow();
                 bool? result = selectionWindow.ShowDialog();
 
-                // 3. OKボタンが押された場合のみメイン画面へ進む
+                // 2. OKが押された場合のみメイン画面へ進む
                 if (result == true)
                 {
-                    // 選択された駅情報を取得
                     var selectedStation = selectionWindow.SelectedStation;
 
-                    // ★安全対策: 万が一 null だった場合の保険
+                    // 安全対策: データが取れなかった場合のダミー
                     if (selectedStation == null)
                     {
-                        MessageBox.Show("自局データが正しく取得できませんでした。\nデフォルト設定（リストの先頭）で起動します。",
-                                        "警告", MessageBoxButton.OK, MessageBoxImage.Warning);
-
-                        // リストにデータがあれば先頭を使う、なければダミーデータ
-                        if (PhoneBook.Entries != null && PhoneBook.Entries.Count > 0)
-                        {
-                            selectedStation = PhoneBook.Entries[0];
-                        }
-                        else
-                        {
-                            selectedStation = new PhoneBookEntry { Name = "緊急用予備端末", Number = "999" };
-                        }
+                        selectedStation = new PhoneBookEntry { Name = "緊急用予備端末", Number = "999" };
                     }
 
-                    // 4. メイン画面を作成してデータを渡す
+                    // 3. メイン画面を作成
                     var mainWindow = new MainWindow(selectedStation);
 
-                    // メイン画面が閉じたらアプリも終了するように設定を戻す
+                    // メイン画面が閉じたらアプリも終了するように戻す
                     app.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
                     // アプリを開始
@@ -56,15 +43,13 @@ namespace RailwayPhone
                 }
                 else
                 {
-                    // キャンセルされた場合はアプリを終了
+                    // キャンセルされたら終了
                     app.Shutdown();
                 }
             }
             catch (Exception ex)
             {
-                // 起動中にエラーが起きた場合にメッセージを出す
-                MessageBox.Show($"起動時に致命的なエラーが発生しました:\n{ex.Message}\n\n{ex.StackTrace}",
-                                "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"起動エラー: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 app.Shutdown();
             }
         }
