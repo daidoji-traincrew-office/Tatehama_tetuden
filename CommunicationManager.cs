@@ -11,14 +11,14 @@ namespace RailwayPhone
         private HubConnection _hubConnection;
         private bool _isManuallyDisconnecting = false;
 
-        // イベント定義 (すべて送信元IDを含むように変更)
-        public event Action<string, string> IncomingCallReceived; // (Number, CallerID)
-        public event Action<string> AnswerReceived;               // (ResponderID)
-        public event Action<string> LoginSuccess;                 // (MyID)
+        public event Action<string, string> IncomingCallReceived;
+        public event Action<string> AnswerReceived;
+        public event Action<string> LoginSuccess;
+        public event Action<string> HangupReceived;
+        public event Action<string> CancelReceived;
 
-        // 以下、ID付きに変更
-        public event Action<string> HangupReceived; // (FromID)
-        public event Action<string> CancelReceived; // (FromID) ※CANCEL用に追加
+        // ★追加: 拒否信号イベント
+        public event Action<string> RejectReceived;
 
         public event Action BusyReceived;
         public event Action HoldReceived;
@@ -75,8 +75,6 @@ namespace RailwayPhone
                     {
                         string type = data["type"];
                         string Get(string k) => data.ContainsKey(k) ? data[k] : "";
-
-                        // from_id (または caller_id) を取得してイベントに渡す
                         string fromId = Get("from_id");
                         if (string.IsNullOrEmpty(fromId)) fromId = Get("caller_id");
 
@@ -85,11 +83,9 @@ namespace RailwayPhone
                             case "LOGIN_SUCCESS": LoginSuccess?.Invoke(Get("my_id")); break;
                             case "INCOMING": IncomingCallReceived?.Invoke(Get("from"), Get("caller_id")); break;
                             case "ANSWERED": AnswerReceived?.Invoke(Get("responder_id")); break;
-
-                            // ★修正: 送信元IDを渡す
                             case "HANGUP": HangupReceived?.Invoke(fromId); break;
                             case "CANCEL": CancelReceived?.Invoke(fromId); break;
-
+                            case "REJECT": RejectReceived?.Invoke(fromId); break; // ★追加
                             case "BUSY": BusyReceived?.Invoke(); break;
                             case "HOLD_REQUEST": HoldReceived?.Invoke(); break;
                             case "RESUME_REQUEST": ResumeReceived?.Invoke(); break;
@@ -104,7 +100,9 @@ namespace RailwayPhone
         public async void SendCall(string targetNumber) { if (IsConnected) await _hubConnection.InvokeAsync("Call", targetNumber); }
         public async void SendAnswer(string targetNumber, string callerId) { if (IsConnected) await _hubConnection.InvokeAsync("Answer", targetNumber, callerId); }
 
-        // 誰宛の切断かを送る
+        // ★追加: 拒否信号送信
+        public async void SendReject(string callerId) { if (IsConnected) await _hubConnection.InvokeAsync("Reject", callerId); }
+
         public async void SendHangup(string targetId) { if (IsConnected) await _hubConnection.InvokeAsync("Hangup", targetId); }
         public async void SendBusy(string callerId) { if (IsConnected) await _hubConnection.InvokeAsync("Busy", callerId); }
         public async void SendHold(string targetId) { if (IsConnected) await _hubConnection.InvokeAsync("Hold", targetId); }
