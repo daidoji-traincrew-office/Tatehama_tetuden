@@ -6,7 +6,6 @@ namespace RailwayPhone
 {
     public class SoundManager : IDisposable
     {
-        // 音声ファイル名定義
         public const string FILE_YOBI1 = "yobi1.wav";
         public const string FILE_YOBI2 = "yobi2.wav";
         public const string FILE_YOBIDASHI = "yobidashi.wav";
@@ -14,8 +13,6 @@ namespace RailwayPhone
         public const string FILE_OKI = "oki.wav";
         public const string FILE_HOLD1 = "hold1.wav";
         public const string FILE_HOLD2 = "hold2.wav";
-
-        // ★ここが重要: 話し中音の定義
         public const string FILE_WATYU = "watyu.wav";
 
         private IWavePlayer _outputDevice;
@@ -28,7 +25,8 @@ namespace RailwayPhone
             else _currentDeviceId = -1;
         }
 
-        public void Play(string fileName, bool loop = false)
+        // loopIntervalMs: ループ時の空白時間(ミリ秒)
+        public void Play(string fileName, bool loop = false, int loopIntervalMs = 0)
         {
             Stop();
 
@@ -38,19 +36,24 @@ namespace RailwayPhone
             try
             {
                 _audioFile = new AudioFileReader(path);
+                WaveStream finalStream = _audioFile;
 
                 if (loop)
                 {
-                    var loopStream = new LoopStream(_audioFile);
-                    _outputDevice = new WaveOutEvent { DeviceNumber = _currentDeviceId };
-                    _outputDevice.Init(loopStream);
-                }
-                else
-                {
-                    _outputDevice = new WaveOutEvent { DeviceNumber = _currentDeviceId };
-                    _outputDevice.Init(_audioFile);
+                    if (loopIntervalMs > 0)
+                    {
+                        // 間隔付きループ
+                        finalStream = new IntervalLoopStream(_audioFile, loopIntervalMs);
+                    }
+                    else
+                    {
+                        // 通常ループ
+                        finalStream = new LoopStream(_audioFile);
+                    }
                 }
 
+                _outputDevice = new WaveOutEvent { DeviceNumber = _currentDeviceId };
+                _outputDevice.Init(finalStream);
                 _outputDevice.Play();
             }
             catch (Exception ex)
@@ -69,35 +72,86 @@ namespace RailwayPhone
             _audioFile = null;
         }
 
-        public void Dispose()
-        {
-            Stop();
-        }
-    }
+        public void Dispose() => Stop();
 
-    // ループ再生用ヘルパー
-    public class LoopStream : WaveStream
-    {
-        private WaveStream sourceStream;
-        public LoopStream(WaveStream sourceStream) { this.sourceStream = sourceStream; this.EnableLooping = true; }
-        public bool EnableLooping { get; set; }
-        public override WaveFormat WaveFormat => sourceStream.WaveFormat;
-        public override long Length => sourceStream.Length;
-        public override long Position { get => sourceStream.Position; set => sourceStream.Position = value; }
-        public override int Read(byte[] buffer, int offset, int count)
+        // --- 内部クラス: 通常ループ ---
+        private class LoopStream : WaveStream
         {
-            int totalBytesRead = 0;
-            while (totalBytesRead < count)
+            private WaveStream sourceStream;
+            public LoopStream(WaveStream sourceStream) { this.sourceStream = sourceStream; }
+            public override WaveFormat WaveFormat => sourceStream.WaveFormat;
+            public override long Length => long.MaxValue;
+            public override long Position { get => sourceStream.Position; set => sourceStream.Position = value; }
+            public override int Read(byte[] buffer, int offset, int count)
             {
-                int bytesRead = sourceStream.Read(buffer, offset + totalBytesRead, count - totalBytesRead);
-                if (bytesRead == 0)
+                int totalBytesRead = 0;
+                while (totalBytesRead < count)
                 {
-                    if (sourceStream.Position == 0 || !EnableLooping) break;
-                    sourceStream.Position = 0;
+                    int bytesRead = sourceStream.Read(buffer, offset + totalBytesRead, count - totalBytesRead);
+                    if (bytesRead == 0)
+                    {
+                        if (sourceStream.Position == 0) break;
+                        sourceStream.Position = 0;
+                    }
+                    totalBytesRead += bytesRead;
                 }
-                totalBytesRead += bytesRead;
+                return totalBytesRead;
             }
-            return totalBytesRead;
+        }
+
+        // --- 内部クラス: 間隔付きループ ---
+        private class IntervalLoopStream : WaveStream
+        {
+            private WaveStream sourceStream;
+            private int silenceBytesTotal;
+            private int silenceBytesWritten;
+            private bool inSilenceMode = false;
+
+            public IntervalLoopStream(WaveStream sourceStream, int intervalMs)
+            {
+                this.sourceStream = sourceStream;
+                int bytesPerSec = sourceStream.WaveFormat.AverageBytesPerSecond;
+                this.silenceBytesTotal = (int)((double)bytesPerSec * intervalMs / 1000.0);
+            }
+
+            public override WaveFormat WaveFormat => sourceStream.WaveFormat;
+            public override long Length => long.MaxValue;
+            public override long Position { get => sourceStream.Position; set => sourceStream.Position = value; }
+
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                int bytesWritten = 0;
+                while (bytesWritten < count)
+                {
+                    if (inSilenceMode)
+                    {
+                        int needed = count - bytesWritten;
+                        int remaining = silenceBytesTotal - silenceBytesWritten;
+                        int toWrite = Math.Min(needed, remaining);
+                        Array.Clear(buffer, offset + bytesWritten, toWrite);
+                        bytesWritten += toWrite;
+                        silenceBytesWritten += toWrite;
+
+                        if (silenceBytesWritten >= silenceBytesTotal)
+                        {
+                            inSilenceMode = false;
+                            silenceBytesWritten = 0;
+                            sourceStream.Position = 0;
+                        }
+                    }
+                    else
+                    {
+                        int read = sourceStream.Read(buffer, offset + bytesWritten, count - bytesWritten);
+                        if (read == 0)
+                        {
+                            inSilenceMode = true;
+                            silenceBytesWritten = 0;
+                        }
+                        else bytesWritten += read;
+                    }
+                }
+                return bytesWritten;
+            }
         }
     }
 }

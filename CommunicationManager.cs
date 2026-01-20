@@ -1,109 +1,100 @@
 ﻿using System;
-using System.Net.Sockets;
-using System.Text;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
-using System.Collections.Generic;
+using Microsoft.AspNetCore.SignalR.Client;
 
 namespace RailwayPhone
 {
     public class CommunicationManager : IDisposable
     {
-        private TcpClient _client;
-        private NetworkStream _stream;
-        private bool _isConnected = false;
+        private HubConnection _hubConnection;
 
+        public event Action<string, string, int> IncomingCallReceived;
+        public event Action<string, int> AnswerReceived;
+
+        // ★修正: 引数(fromNumber)を追加
+        public event Action<string> HangupReceived;
+
+        public event Action BusyReceived;
+        public event Action HoldReceived;
+        public event Action ResumeReceived;
         public event Action<string> MessageReceived;
+        public event Action ConnectionLost;
+        public event Action Reconnected;
+
+        public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
         public async Task<bool> Connect(string ipAddress, int port)
         {
             try
             {
-                _client = new TcpClient();
-                await _client.ConnectAsync(ipAddress, port);
-                _stream = _client.GetStream();
-                _isConnected = true;
-                _ = Task.Run(ReceiveLoop);
+                string url = $"http://{ipAddress}:{port}/phoneHub";
+                _hubConnection = new HubConnectionBuilder()
+                    .WithUrl(url)
+                    .WithAutomaticReconnect()
+                    .Build();
+
+                _hubConnection.On<string>("ReceiveMessage", (json) =>
+                {
+                    MessageReceived?.Invoke(json);
+                    try
+                    {
+                        var data = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+                        if (data != null && data.ContainsKey("type"))
+                        {
+                            string type = data["type"];
+                            string Get(string k) => data.ContainsKey(k) ? data[k] : "";
+                            int GetInt(string k) => data.ContainsKey(k) && int.TryParse(data[k], out int v) ? v : 0;
+
+                            switch (type)
+                            {
+                                case "INCOMING":
+                                    IncomingCallReceived?.Invoke(Get("from"), Get("from_ip"), GetInt("udp_port"));
+                                    break;
+                                case "ANSWERED":
+                                    AnswerReceived?.Invoke(Get("from_ip"), GetInt("udp_port"));
+                                    break;
+                                case "HANGUP":
+                                    // ★修正: fromを取得して渡す
+                                    HangupReceived?.Invoke(Get("from"));
+                                    break;
+                                case "BUSY":
+                                    BusyReceived?.Invoke();
+                                    break;
+                                case "HOLD_REQUEST":
+                                    HoldReceived?.Invoke();
+                                    break;
+                                case "RESUME_REQUEST":
+                                    ResumeReceived?.Invoke();
+                                    break;
+                                case "CANCEL":
+                                    // CANCELの場合は発信者指定はないが、現在の処理をキャンセルさせる
+                                    HangupReceived?.Invoke("");
+                                    break;
+                            }
+                        }
+                    }
+                    catch { }
+                });
+
+                _hubConnection.Closed += (e) => { ConnectionLost?.Invoke(); return Task.CompletedTask; };
+                _hubConnection.Reconnected += (s) => { Reconnected?.Invoke(); return Task.CompletedTask; };
+
+                await _hubConnection.StartAsync();
                 return true;
             }
             catch { return false; }
         }
 
-        public void SendMessage(object data)
-        {
-            if (!_isConnected) return;
-            try
-            {
-                string json = JsonSerializer.Serialize(data);
-                byte[] bytes = Encoding.UTF8.GetBytes(json);
-                _stream.Write(bytes, 0, bytes.Length);
-            }
-            catch { _isConnected = false; }
-        }
-
-        // --- 送信メソッド群 ---
-
-        public void SendLogin(string myNumber)
-        {
-            SendMessage(new { type = "LOGIN", number = myNumber });
-        }
-
-        public void SendCall(string targetNumber, int udpPort)
-        {
-            SendMessage(new { type = "CALL", target = targetNumber, udp_port = udpPort.ToString() });
-        }
-
-        public void SendAnswer(string targetNumber, int udpPort)
-        {
-            SendMessage(new { type = "ANSWER", target = targetNumber, udp_port = udpPort.ToString() });
-        }
-
-        public void SendHangup(string targetNumber)
-        {
-            SendMessage(new { type = "HANGUP", target = targetNumber });
-        }
-
-        public void SendHold(string targetNumber)
-        {
-            SendMessage(new { type = "HOLD", target = targetNumber });
-        }
-
-        public void SendResume(string targetNumber)
-        {
-            SendMessage(new { type = "RESUME", target = targetNumber });
-        }
-
-        // ★追加: 話し中(拒否)信号を送る
-        public void SendBusy(string targetNumber)
-        {
-            SendMessage(new { type = "BUSY", target = targetNumber });
-        }
-
-        // --- 受信ループ ---
-
-        private async Task ReceiveLoop()
-        {
-            byte[] buffer = new byte[4096];
-            try
-            {
-                while (_isConnected)
-                {
-                    int bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length);
-                    if (bytesRead == 0) break;
-
-                    string json = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                    MessageReceived?.Invoke(json);
-                }
-            }
-            catch { }
-            finally { _isConnected = false; }
-        }
-
-        public void Dispose()
-        {
-            _isConnected = false;
-            _stream?.Close();
-            _client?.Close();
-        }
+        // --- 送信メソッド (変更なし) ---
+        public async void SendLogin(string myNumber) { if (IsConnected) try { await _hubConnection.InvokeAsync("Login", myNumber); } catch { } }
+        public async void SendCall(string targetNumber, int udpPort) { if (IsConnected) try { await _hubConnection.InvokeAsync("Call", targetNumber, udpPort.ToString()); } catch { } }
+        public async void SendAnswer(string targetNumber, int udpPort) { if (IsConnected) try { await _hubConnection.InvokeAsync("Answer", targetNumber, udpPort.ToString()); } catch { } }
+        public async void SendHangup(string targetNumber) { if (IsConnected) try { await _hubConnection.InvokeAsync("Hangup", targetNumber); } catch { } }
+        public async void SendBusy(string callerNumber) { if (IsConnected) try { await _hubConnection.InvokeAsync("Busy", callerNumber); } catch { } }
+        public async void SendHold(string targetNumber) { if (IsConnected) try { await _hubConnection.InvokeAsync("Hold", targetNumber); } catch { } }
+        public async void SendResume(string targetNumber) { if (IsConnected) try { await _hubConnection.InvokeAsync("Resume", targetNumber); } catch { } }
+        public async void Dispose() { if (_hubConnection != null) await _hubConnection.DisposeAsync(); }
     }
 }
