@@ -4,16 +4,16 @@ option csharp_namespace = "RailwayPhone.Protos";
 
 package voice;
 
-// ‰¹ºƒXƒgƒŠ[ƒ~ƒ“ƒOƒT[ƒrƒX’è‹`
+// éŸ³å£°ã‚¹ãƒˆãƒªãƒ¼ãƒŸãƒ³ã‚°ã‚µãƒ¼ãƒ“ã‚¹å®šç¾©
 service VoiceRelay {
-  // ‘o•ûŒüƒXƒgƒŠ[ƒ~ƒ“ƒO (Bidirectional Streaming)
-  // ƒNƒ‰ƒCƒAƒ“ƒg‚ÍÚ‘±‚µ‘±‚¯A‰¹º‚ğ‘—‚èA“¯‚É‰¹º‚ğó‚¯æ‚é
+  // åŒæ–¹å‘ã‚¹ãƒˆãƒªãƒ¼ãƒŸãƒ³ã‚° (Bidirectional Streaming)
+  // ã‚¯ãƒ©ã‚¤ã‚¢ãƒ³ãƒˆã¯æ¥ç¶šã—ç¶šã‘ã€éŸ³å£°ã‚’é€ã‚Šã€åŒæ™‚ã«éŸ³å£°ã‚’å—ã‘å–ã‚‹
   rpc JoinSession (stream VoiceData) returns (stream VoiceData);
 }
 
-// ‰¹ºƒf[ƒ^ƒpƒPƒbƒg
+// éŸ³å£°ãƒ‡ãƒ¼ã‚¿ãƒ‘ã‚±ãƒƒãƒˆ
 message VoiceData {
-  string client_id = 1;      // ‘—MÒ‚ÌID (SignalR‚ÌConnectionID‚È‚Ç‚ğ—¬—p)
-  string target_id = 2;      // ‘—Mæ‚ÌID
-  bytes audio_content = 3;   // ‰¹ºƒf[ƒ^ (MuLawˆ³kÏ‚İƒoƒCƒg—ñ)
+  string client_id = 1;      // é€ä¿¡è€…ã®ID (SignalRã®ConnectionIDãªã©ã‚’æµç”¨)
+  string target_id = 2;      // é€ä¿¡å…ˆã®ID
+  bytes audio_content = 3;   // éŸ³å£°ãƒ‡ãƒ¼ã‚¿ (MuLawåœ§ç¸®æ¸ˆã¿ãƒã‚¤ãƒˆåˆ—)
 }
