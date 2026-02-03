@@ -11,5 +11,5 @@
 *.log
 *.suo
 
-bin/*
-obj/*
+**/bin/
+**/obj/
