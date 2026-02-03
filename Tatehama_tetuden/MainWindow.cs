@@ -14,8 +14,6 @@ using System.Collections.Generic;
 
 namespace RailwayPhone
 {
-    public enum PhoneStatus { Idle, Incoming, Outgoing, Talking, Holding }
-
     public class MainWindow : Window
     {
         // サーバー設定

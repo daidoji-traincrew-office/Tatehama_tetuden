@@ -2,13 +2,6 @@
 
 namespace RailwayPhone
 {
-    public class PhoneBookEntry
-    {
-        public string Name { get; set; }
-        public string Number { get; set; }
-        public string Category { get; set; } // カテゴリ（色分けなどに使用）
-    }
-
     public static class PhoneBook
     {
         public static List<PhoneBookEntry> Entries { get; } = new List<PhoneBookEntry>
