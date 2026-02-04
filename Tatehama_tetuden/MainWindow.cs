@@ -73,9 +73,8 @@ namespace RailwayPhone
                 new SoundService(),
                 _phoneBookRepo
             );
-            _callService.Initialize(station,
-                new DeviceInfo { ID = "-1", Name = "既定のスピーカー" } /* speakerOut の初期値 */,
-                null, null);
+            _callService.Initialize(station, null, null,
+                new DeviceInfo { ID = "-1", Name = "既定のスピーカー" });
 
             InitializeComponents();
             SubscribeToCallService();
