@@ -1,18 +1,18 @@
 namespace RailwayPhone;
 
-public interface ISignalingService : IDisposable
+public interface ISignalingService : IDisposable, IAsyncDisposable
 {
     bool IsConnected { get; }
 
     Task<bool> ConnectAsync(string ipAddress, int port);
-    void SendLogin(string myNumber);
-    void SendCall(string targetNumber);
-    void SendAnswer(string targetNumber, string callerId);
-    void SendReject(string callerId);
-    void SendHangup(string targetId);
-    void SendBusy(string callerId);
-    void SendHold(string targetId);
-    void SendResume(string targetId);
+    Task SendLogin(string myNumber);
+    Task SendCall(string targetNumber);
+    Task SendAnswer(string targetNumber, string callerId);
+    Task SendReject(string callerId);
+    Task SendHangup(string targetId);
+    Task SendBusy(string callerId);
+    Task SendHold(string targetId);
+    Task SendResume(string targetId);
 
     event Action<string>         LoginSuccess;
     event Action<string, string> IncomingCallReceived;
