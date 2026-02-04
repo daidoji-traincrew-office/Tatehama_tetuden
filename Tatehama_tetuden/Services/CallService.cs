@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace RailwayPhone
 {
-    public class CallService : IDisposable
+    public class CallService : IDisposable, IAsyncDisposable
     {
         // --- 依存（インターフェース） ---
         private readonly ISignalingService   _signaling;
@@ -74,7 +74,7 @@ namespace RailwayPhone
             bool success = await _signaling.ConnectAsync(SERVER_IP, SERVER_PORT);
             if (success)
             {
-                _signaling.SendLogin(CurrentStation!.Number);
+                await _signaling.SendLogin(CurrentStation!.Number);
                 IsOnline = true;
             }
             else
@@ -87,26 +87,26 @@ namespace RailwayPhone
         private void SetupSignalREvents()
         {
             _signaling.LoginSuccess         += (id)               => { _myConnectionId = id; };
-            _signaling.IncomingCallReceived += (number, callerId) => HandleIncomingCall(number, callerId);
+            _signaling.IncomingCallReceived += (number, callerId) => _ = HandleIncomingCall(number, callerId);
             _signaling.AnswerReceived       += (responderId)      => HandleAnswered(responderId);
             _signaling.HangupReceived       += (fromId)           =>
             {
                 if (string.IsNullOrEmpty(fromId) || fromId == _targetConnectionId)
-                    EndCallInternal(sendSignal: false, playSound: true);
+                    _ = EndCallInternal(sendSignal: false, playSound: true);
             };
             _signaling.CancelReceived       += (fromId)           =>
             {
                 if (CurrentStatus == PhoneStatus.Incoming && fromId == _targetConnectionId)
-                    EndCallInternal(sendSignal: false, playSound: false);
+                    _ = EndCallInternal(sendSignal: false, playSound: false);
             };
-            _signaling.RejectReceived       += (fromId)           => HandleRejected();
-            _signaling.BusyReceived         += ()                 => HandleBusySignal();
+            _signaling.RejectReceived       += (fromId)           => { _ = HandleRejected(); };
+            _signaling.BusyReceived         += ()                 => { _ = HandleBusySignal(); };
             _signaling.HoldReceived         += ()                 => HandleRemoteHold(true);
             _signaling.ResumeReceived       += ()                 => HandleRemoteHold(false);
             _signaling.ConnectionLost       += ()                 => { IsOnline = false; OnlineStateChanged?.Invoke(false); };
             _signaling.Reconnected          += ()                 =>
             {
-                _signaling.SendLogin(CurrentStation!.Number);
+                _ = _signaling.SendLogin(CurrentStation!.Number);
                 IsOnline = true;
                 OnlineStateChanged?.Invoke(true);
             };
@@ -114,12 +114,12 @@ namespace RailwayPhone
 
         // --- ステーション・オーディオ設定 ---
 
-        public void ChangeStation(PhoneBookEntry newStation)
+        public async Task ChangeStation(PhoneBookEntry newStation)
         {
             CurrentStation = newStation;
             if (_signaling.IsConnected)
             {
-                _signaling.SendLogin(newStation.Number);
+                await _signaling.SendLogin(newStation.Number);
             }
             OnlineStateChanged?.Invoke(IsOnline);
         }
@@ -133,7 +133,7 @@ namespace RailwayPhone
 
         // --- 通話操作（公開） ---
 
-        public async void StartCall(string targetNumber)
+        public async Task StartCall(string targetNumber)
         {
             if (string.IsNullOrEmpty(targetNumber)) return;
 
@@ -148,7 +148,7 @@ namespace RailwayPhone
                 _sound.Play(SoundName.Watyu);
                 await Task.Delay(3000);
                 if (CurrentStatus == PhoneStatus.Outgoing)
-                    EndCallInternal(sendSignal: false, playSound: false);
+                    await EndCallInternal(sendSignal: false, playSound: false);
                 return;
             }
 
@@ -160,16 +160,16 @@ namespace RailwayPhone
 
             if (CurrentStatus == PhoneStatus.Outgoing)
             {
-                _signaling.SendCall(targetNumber);
+                await _signaling.SendCall(targetNumber);
                 _sound.Play(SoundName.Yobidashi, loop: true, loopIntervalMs: 2000);
             }
         }
 
-        public void AnswerCall()
+        public async Task AnswerCall()
         {
             _sound.Stop();
             _sound.Play(SoundName.Tori);
-            _signaling.SendAnswer(_connectedTargetNumber!, _targetConnectionId!);
+            await _signaling.SendAnswer(_connectedTargetNumber!, _targetConnectionId!);
             StartVoiceTransmission(_targetConnectionId!);
 
             CurrentStatus  = PhoneStatus.Talking;
@@ -182,7 +182,7 @@ namespace RailwayPhone
             StatusChanged?.Invoke(CurrentStatus);
         }
 
-        public void EndCall() => EndCallInternal(sendSignal: true, playSound: true);
+        public async Task EndCall() => await EndCallInternal(sendSignal: true, playSound: true);
 
         public void ToggleMute()
         {
@@ -201,29 +201,29 @@ namespace RailwayPhone
             StatusChanged?.Invoke(CurrentStatus);
         }
 
-        public void ToggleHold()
+        public async Task ToggleHold()
         {
             if (_isRemoteHold) return;
             IsMyHold = !IsMyHold;
             if (IsMyHold)
             {
-                _signaling.SendHold(_targetConnectionId!);
+                await _signaling.SendHold(_targetConnectionId!);
                 StartHoldState(self: true);
             }
             else
             {
-                _signaling.SendResume(_targetConnectionId!);
+                await _signaling.SendResume(_targetConnectionId!);
                 StopHoldState();
             }
         }
 
         // --- 内部ハンドラ ---
 
-        private void HandleIncomingCall(string fromNumber, string callerId)
+        private async Task HandleIncomingCall(string fromNumber, string callerId)
         {
             if (CurrentStatus != PhoneStatus.Idle)
             {
-                _signaling.SendBusy(callerId);
+                await _signaling.SendBusy(callerId);
                 return;
             }
 
@@ -256,7 +256,7 @@ namespace RailwayPhone
             StatusChanged?.Invoke(CurrentStatus);
         }
 
-        private async void HandleBusySignal()
+        private async Task HandleBusySignal()
         {
             if (CurrentStatus != PhoneStatus.Outgoing) return;
             ConnectedTargetName = "話中";
@@ -264,10 +264,10 @@ namespace RailwayPhone
             StatusChanged?.Invoke(CurrentStatus);
             await Task.Delay(5000);
             if (CurrentStatus == PhoneStatus.Outgoing)
-                EndCallInternal(sendSignal: false, playSound: false);
+                await EndCallInternal(sendSignal: false, playSound: false);
         }
 
-        private async void HandleRejected()
+        private async Task HandleRejected()
         {
             if (CurrentStatus != PhoneStatus.Outgoing) return;
             ConnectedTargetName = "事情によりお繋ぎできません";
@@ -277,7 +277,7 @@ namespace RailwayPhone
             StatusChanged?.Invoke(CurrentStatus);
             await Task.Delay(5000);
             if (CurrentStatus == PhoneStatus.Outgoing)
-                EndCallInternal(sendSignal: false, playSound: false);
+                await EndCallInternal(sendSignal: false, playSound: false);
         }
 
         private void HandleRemoteHold(bool isHold)
@@ -313,17 +313,17 @@ namespace RailwayPhone
             _voice.StartTransmission(_myConnectionId ?? "", targetId, SERVER_IP, SERVER_GRPC_PORT, inDev, outDevId);
         }
 
-        private void EndCallInternal(bool sendSignal, bool playSound)
+        private async Task EndCallInternal(bool sendSignal, bool playSound)
         {
             if (sendSignal && !string.IsNullOrEmpty(_targetConnectionId))
             {
                 if (CurrentStatus == PhoneStatus.Incoming)
-                    _signaling.SendReject(_targetConnectionId);
+                    await _signaling.SendReject(_targetConnectionId);
                 else
-                    _signaling.SendHangup(_targetConnectionId);
+                    await _signaling.SendHangup(_targetConnectionId);
             }
 
-            _voice.StopTransmission();
+            await _voice.StopTransmission();
 
             _connectedTargetNumber = null;
             _targetConnectionId    = null;
@@ -352,9 +352,17 @@ namespace RailwayPhone
 
         public void Dispose()
         {
-            _voice?.Dispose();
-            _sound?.Dispose();
-            _signaling?.Dispose();
+            DisposeAsync().GetAwaiter().GetResult();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _voice.StopTransmission();
+            _sound.Dispose();
+            if (_signaling is IAsyncDisposable asyncSignaling)
+                await asyncSignaling.DisposeAsync();
+            else
+                _signaling.Dispose();
         }
     }
 }

@@ -36,34 +36,37 @@ public class CallServiceTests
     // ─── 発信 ────────────────────────────────────────────────
 
     [Fact]
-    public void StartCall_接続済みの場合_Outgoingに遷移し_SendCallが呼ばれる()
+    public async Task StartCall_接続済みの場合_Outgoingに遷移し_SendCallが呼ばれる()
     {
         _mockSignaling.SetupGet(s => s.IsConnected).Returns(true);
         var statusEvents = CaptureStatusEvents();
 
-        _sut.StartCall("101");
+        await _sut.StartCall("101");
 
         Assert.Contains(PhoneStatus.Outgoing, statusEvents);
-        // async void 内の Task.Delay(800) の後に SendCall が呼ばれる
-        Task.Delay(1500).Wait();
         _mockSignaling.Verify(s => s.SendCall("101"), Times.Once);
     }
 
     [Fact]
-    public void StartCall_接続されていない場合_圏外メッセージとWatyuが再生される()
+    public async Task StartCall_接続されていない場合_圏外メッセージとWatyuが再生される()
     {
         _mockSignaling.SetupGet(s => s.IsConnected).Returns(false);
+        var statusEvents = CaptureStatusEvents();
 
-        _sut.StartCall("101");
+        // 圏外パスは Task.Delay(3000) の後に自動切断する。
+        // 直後の状態（圏外メッセージ・Watyu再生）を検証するため、完了を待たない。
+        _ = _sut.StartCall("101");
+        await Task.Yield();
 
+        Assert.Contains(PhoneStatus.Outgoing, statusEvents);
         Assert.Equal("圏外です", _sut.ConnectedTargetName);
         _mockSound.Verify(s => s.Play(SoundName.Watyu, false, 0), Times.Once);
     }
 
     [Fact]
-    public void StartCall_空の番号の場合_何もしない()
+    public async Task StartCall_空の番号の場合_何もしない()
     {
-        _sut.StartCall("");
+        await _sut.StartCall("");
 
         Assert.Equal(PhoneStatus.Idle, _sut.CurrentStatus);
         _mockSignaling.Verify(s => s.SendCall(It.IsAny<string>()), Times.Never);
@@ -186,21 +189,21 @@ public class CallServiceTests
     // ─── 電話帳検索 ──────────────────────────────────────────
 
     [Fact]
-    public void StartCall_登録番号_名前が正しくセットされる()
+    public async Task StartCall_登録番号_名前が正しくセットされる()
     {
         _mockSignaling.SetupGet(s => s.IsConnected).Returns(true);
 
-        _sut.StartCall("101");
+        await _sut.StartCall("101");
 
         Assert.Equal("総合司令所 館浜司令", _sut.ConnectedTargetName);
     }
 
     [Fact]
-    public void StartCall_未登録番号_未登録メッセージが表示される()
+    public async Task StartCall_未登録番号_未登録メッセージが表示される()
     {
         _mockSignaling.SetupGet(s => s.IsConnected).Returns(true);
 
-        _sut.StartCall("999");
+        await _sut.StartCall("999");
 
         Assert.Equal("未登録", _sut.ConnectedTargetName);
     }

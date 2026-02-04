@@ -29,7 +29,7 @@ public class VoiceService : IVoiceService
 
     public async void StartTransmission(string myId, string targetId, string serverIp, int serverPort, int inputDevId, int outputDevId)
     {
-        if (_isActive) StopTransmission();
+        if (_isActive) _ = StopTransmission();
 
         _myId = myId;
         _targetId = targetId;
@@ -150,12 +150,13 @@ public class VoiceService : IVoiceService
         InitWaveOut(outputDeviceId);
     }
 
-    public void StopTransmission()
+    public async Task StopTransmission()
     {
         _isActive = false;
         try
         {
-            _call?.RequestStream.CompleteAsync();
+            if (_call != null)
+                await _call.RequestStream.CompleteAsync();
             _call?.Dispose();
             _channel?.Dispose();
             _waveIn?.StopRecording();
@@ -168,6 +169,6 @@ public class VoiceService : IVoiceService
 
     public void Dispose()
     {
-        StopTransmission();
+        StopTransmission().GetAwaiter().GetResult();
     }
 }

@@ -83,7 +83,7 @@ namespace RailwayPhone
 
             Closing += (s, e) =>
             {
-                _callService.Dispose();
+                _ = _callService.DisposeAsync();
                 ToastNotificationManagerCompat.Uninstall();
             };
         }
@@ -213,7 +213,7 @@ namespace RailwayPhone
             win.Owner = this;
             if (win.ShowDialog() == true)
             {
-                _callService.ChangeStation(win.SelectedStation);
+                _ = _callService.ChangeStation(win.SelectedStation);
             }
         }
 
@@ -393,7 +393,7 @@ namespace RailwayPhone
 
             _callBtn = new Button { Content = GetPhoneIcon(false), Height = 50, Background = _primaryColor, Foreground = Brushes.White, Margin = new Thickness(10, 0, 10, 0) };
             var sC = new Style(typeof(Border)); sC.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(25))); _callBtn.Resources.Add(typeof(Border), sC);
-            _callBtn.Click += (s, e) => _callService.StartCall(_inputNumberBox.Text.Trim());
+            _callBtn.Click += (s, e) => _ = _callService.StartCall(_inputNumberBox.Text.Trim());
             p.Children.Add(_callBtn);
             return p;
         }
@@ -410,12 +410,12 @@ namespace RailwayPhone
 
             var ansBtn = new Button { Content = GetPhoneIcon(false), Height = 60, Background = _acceptColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
             var sA = new Style(typeof(Border)); sA.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); ansBtn.Resources.Add(typeof(Border), sA);
-            ansBtn.Click += (s, e) => _callService.AnswerCall();
+            ansBtn.Click += (s, e) => _ = _callService.AnswerCall();
             Grid.SetColumn(ansBtn, 0); bg.Children.Add(ansBtn);
 
             var rb = new Button { Content = GetPhoneIcon(true), Height = 60, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
             var sR = new Style(typeof(Border)); sR.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); rb.Resources.Add(typeof(Border), sR);
-            rb.Click += (s, e) => _callService.EndCall();
+            rb.Click += (s, e) => _ = _callService.EndCall();
             Grid.SetColumn(rb, 2); bg.Children.Add(rb);
             p.Children.Add(bg);
             return p;
@@ -431,7 +431,7 @@ namespace RailwayPhone
 
             var cancelBtn = new Button { Content = GetPhoneIcon(true), Width = 200, Height = 60, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
             var sC = new Style(typeof(Border)); sC.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); cancelBtn.Resources.Add(typeof(Border), sC);
-            cancelBtn.Click += (s, e) => _callService.EndCall();
+            cancelBtn.Click += (s, e) => _ = _callService.EndCall();
             p.Children.Add(cancelBtn);
             return p;
         }
@@ -460,12 +460,12 @@ namespace RailwayPhone
 
             var b1 = CreateControlBtn("🔇", "ミュート", (s, e) => { _callService.ToggleMute();    UpdateButtonVisuals(); }, out _muteBtn, out _muteBtnLabel); Grid.SetColumn(b1, 0); bg.Children.Add(b1);
             var b2 = CreateControlBtn("🔊", "スピーカー", (s, e) => { _callService.ToggleSpeaker(); UpdateButtonVisuals(); }, out _speakerBtn, out _muteBtnLabel); Grid.SetColumn(b2, 1); bg.Children.Add(b2);
-            var b3 = CreateControlBtn("⏸", "保 留", (s, e) => { _callService.ToggleHold();    UpdateButtonVisuals(); }, out _holdBtn, out _holdBtnLabel); Grid.SetColumn(b3, 2); bg.Children.Add(b3);
+            var b3 = CreateControlBtn("⏸", "保 留", (s, e) => { _ = _callService.ToggleHold(); UpdateButtonVisuals(); }, out _holdBtn, out _holdBtnLabel); Grid.SetColumn(b3, 2); bg.Children.Add(b3);
             p.Children.Add(bg);
 
             var endBtn = new Button { Content = GetPhoneIcon(true), Width = 80, Height = 80, Background = _dangerColor, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 20), Cursor = System.Windows.Input.Cursors.Hand };
             var sE = new Style(typeof(Border)); sE.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(40))); endBtn.Resources.Add(typeof(Border), sE);
-            endBtn.Click += (s, e) => _callService.EndCall();
+            endBtn.Click += (s, e) => _ = _callService.EndCall();
             p.Children.Add(endBtn);
             return p;
         }
