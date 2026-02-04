@@ -359,27 +359,23 @@ namespace RailwayPhone
         {
             try
             {
-                var mm = new MMDeviceEnumerator();
+                var audioDeviceRepo = new AudioDeviceRepository();
 
                 // 入力デバイスの列挙
                 _inputCombo.Items.Clear();
-                foreach (var d in mm.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
+                foreach (var item in audioDeviceRepo.GetInputDevices())
                 {
-                    var item = new DeviceInfo { Name = d.FriendlyName, ID = d.ID };
                     _inputCombo.Items.Add(item);
-                    // 現在の設定とIDが一致すれば選択状態にする
                     if (currentInput != null && item.ID == currentInput.ID)
                         _inputCombo.SelectedItem = item;
                 }
-                // 未選択なら先頭を選択
                 if (_inputCombo.SelectedIndex < 0 && _inputCombo.Items.Count > 0)
                     _inputCombo.SelectedIndex = 0;
 
                 // 出力デバイスの列挙
                 _outputCombo.Items.Clear();
-                foreach (var d in mm.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+                foreach (var item in audioDeviceRepo.GetOutputDevices())
                 {
-                    var item = new DeviceInfo { Name = d.FriendlyName, ID = d.ID };
                     _outputCombo.Items.Add(item);
                     if (currentOutput != null && item.ID == currentOutput.ID)
                         _outputCombo.SelectedItem = item;

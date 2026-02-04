@@ -107,7 +107,7 @@ namespace RailwayPhone
                 Margin = new Thickness(0, 0, 0, 10),
                 Padding = new Thickness(5),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                ItemsSource = PhoneBook.Entries,
+                ItemsSource = new PhoneBookRepository().GetAll(),
                 DisplayMemberPath = "Name" // オブジェクトのどのプロパティを表示するか
             };
 

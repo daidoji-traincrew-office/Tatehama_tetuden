@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,42 +16,18 @@ namespace RailwayPhone
 {
     public class MainWindow : Window
     {
-        // サーバー設定
-        private const string SERVER_IP = "127.0.0.1";
-        private const int SERVER_PORT = 8888;
-        private const int SERVER_GRPC_PORT = 8889;
+        // --- サービス・リポジトリ ---
+        private readonly CallService         _callService;
+        private readonly PhoneBookRepository _phoneBookRepo;
 
-        // マネージャー
-        private CommunicationManager _commManager;
-        private GrpcVoiceManager _voiceManager;
-        private SoundManager _soundManager;
-
-        // デバイス・設定
+        // デバイス・音量（設定画面と連携するためView側に残す）
         private DeviceInfo _currentInputDevice;
         private DeviceInfo _normalOutputDevice;
-        private DeviceInfo _speakerOutputDevice;
         private float _currentInputVol = 1.0f;
         private float _currentOutputVol = 1.0f;
-        private PhoneBookEntry _currentStation;
-
-        // ID管理
-        private string _myConnectionId;
-        private string _targetConnectionId;
-        private string _connectedTargetNumber;
-
-        public PhoneStatus CurrentStatus { get; private set; } = PhoneStatus.Idle;
 
         // ユーティリティ
         private DispatcherTimer _callTimer;
-        private DateTime _callStartTime;
-        private Random _random = new Random();
-
-        // フラグ
-        private bool _isHolding = false;
-        private bool _isMyHold = false;
-        private bool _isRemoteHold = false;
-        private bool _isMuted = false;
-        private bool _isSpeakerOn = false;
 
         // UIコンポーネント
         private ListView _phoneBookList;
@@ -62,8 +38,6 @@ namespace RailwayPhone
         private TextBox _inputNumberBox;
         private Button _muteBtn, _speakerBtn, _holdBtn;
         private TextBlock _muteBtnLabel, _holdBtnLabel;
-
-        // ★追加: 色を変更するために発信ボタンをフィールド化
         private Button _callBtn;
 
         private ScaleTransform _incomingPulse, _outgoingPulse, _talkingPulse;
@@ -85,338 +59,162 @@ namespace RailwayPhone
         public MainWindow(PhoneBookEntry station)
         {
             if (station == null) station = new PhoneBookEntry { Name = "設定なし", Number = "000" };
-            _currentStation = station;
 
-            Title = $"館浜電鉄 鉄道電話 - [{_currentStation.Name}]";
+            Title = $"館浜電鉄 鉄道電話 - [{station.Name}]";
             Width = 950; Height = 650;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = _bgColor;
 
-            _soundManager = new SoundManager();
-            _voiceManager = new GrpcVoiceManager();
-            _speakerOutputDevice = new DeviceInfo { ID = "-1", Name = "既定のスピーカー" };
+            _phoneBookRepo = new PhoneBookRepository();
+
+            _callService = new CallService(
+                new SignalingService(),
+                new VoiceService(),
+                new SoundService(),
+                _phoneBookRepo
+            );
+            _callService.Initialize(station,
+                new DeviceInfo { ID = "-1", Name = "既定のスピーカー" } /* speakerOut の初期値 */,
+                null, null);
 
             InitializeComponents();
+            SubscribeToCallService();
 
-            _commManager = new CommunicationManager();
-            SetupSignalREvents();
-            ConnectToServer();
+            _ = _callService.ConnectAsync();
 
-            Closing += (s, e) => {
-                _voiceManager?.Dispose();
-                _soundManager?.Dispose();
-                _commManager?.Dispose();
+            Closing += (s, e) =>
+            {
+                _callService.Dispose();
                 ToastNotificationManagerCompat.Uninstall();
             };
         }
 
-        private void SetupSignalREvents()
+        // --- CallService イベント配線 ---
+
+        private void SubscribeToCallService()
         {
-            _commManager.LoginSuccess += (id) => _myConnectionId = id;
-            _commManager.IncomingCallReceived += (number, callerId) => Dispatcher.Invoke(() => HandleIncomingCall(number, callerId));
-            _commManager.AnswerReceived += (responderId) => Dispatcher.Invoke(() => HandleAnswered(responderId));
-
-            _commManager.HangupReceived += (fromId) => Dispatcher.Invoke(() =>
-            {
-                if (string.IsNullOrEmpty(fromId) || fromId == _targetConnectionId) EndCall(sendSignal: false);
-            });
-
-            _commManager.CancelReceived += (fromId) => Dispatcher.Invoke(() =>
-            {
-                if (CurrentStatus == PhoneStatus.Incoming && fromId == _targetConnectionId) EndCall(sendSignal: false, playSound: false);
-            });
-
-            _commManager.RejectReceived += (fromId) => Dispatcher.Invoke(() => HandleRejected());
-
-            _commManager.BusyReceived += () => Dispatcher.Invoke(() => HandleBusySignal());
-            _commManager.HoldReceived += () => Dispatcher.Invoke(() => HandleRemoteHold(true));
-            _commManager.ResumeReceived += () => Dispatcher.Invoke(() => HandleRemoteHold(false));
-
-            _commManager.ConnectionLost += () => Dispatcher.Invoke(() => SetOfflineState());
-            _commManager.Reconnecting += () => Dispatcher.Invoke(() => { Title += " [🔄]"; Background = _warningBgColor; });
-            _commManager.Reconnected += () => Dispatcher.Invoke(() => { SetOnlineState(); _commManager.SendLogin(_currentStation.Number); });
+            _callService.StatusChanged         += (status)       => Dispatcher.Invoke(() => OnStatusChanged(status));
+            _callService.OnlineStateChanged    += (online)       => Dispatcher.Invoke(() => OnOnlineStateChanged(online));
+            _callService.IncomingCallReceived  += (name, number) => Dispatcher.Invoke(() => OnIncomingCallReceived(name, number));
+            _callService.CallEnded             += ()             => Dispatcher.Invoke(() => { /* Idle への切り替えは OnStatusChanged で済む */ });
         }
 
-        private async void ConnectToServer()
+        private void OnStatusChanged(PhoneStatus status)
         {
-            Title += " [接続試行中...]";
-            bool success = await _commManager.Connect(SERVER_IP, SERVER_PORT);
-            Dispatcher.Invoke(() => {
-                if (success) { _commManager.SendLogin(_currentStation.Number); SetOnlineState(); }
-                else { MessageBox.Show("サーバー接続失敗"); SetOfflineState(); }
-            });
-        }
-
-        private void SetOfflineState() { Title = $"[圏外] {_currentStation.Name}"; Background = _offlineBgColor; if (_selfStationDisplay != null) { _selfStationDisplay.Text = "圏外"; _selfStationDisplay.Foreground = Brushes.Gray; _selfStationDisplay.Background = Brushes.Transparent; } }
-        private void SetOnlineState() { Title = $"館浜電鉄 鉄道電話 - [{_currentStation.Name}]"; Background = _bgColor; if (_selfStationDisplay != null) { _selfStationDisplay.Text = $"自局: {_currentStation.Name} ({_currentStation.Number})"; _selfStationDisplay.Foreground = _primaryColor; _selfStationDisplay.Background = new SolidColorBrush(Color.FromRgb(230, 240, 255)); } }
-        private void ChangeStatus(PhoneStatus s) => CurrentStatus = s;
-
-        // --- 通話ロジック ---
-
-        private async void StartOutgoingCall()
-        {
-            string targetNum = _inputNumberBox.Text.Trim();
-            if (string.IsNullOrEmpty(targetNum)) return;
-            _connectedTargetNumber = targetNum;
-            ChangeStatus(PhoneStatus.Outgoing);
-            SwitchView(_viewOutgoing);
-            _outgoingNumberText.Text = targetNum;
-
-            if (!_commManager.IsConnected)
+            switch (status)
             {
-                _outgoingNameText.Text = "圏外です"; _outgoingNameText.Foreground = Brushes.Red;
-                _soundManager.Play(SoundManager.FILE_WATYU);
-                await Task.Delay(3000);
-                if (CurrentStatus == PhoneStatus.Outgoing) EndCall(false, false);
-                return;
-            }
+                case PhoneStatus.Idle:
+                    SwitchView(_viewKeypad);
+                    _inputNumberBox.Text = "";
+                    _statusNameText.Text = "宛先未指定";
+                    _statusNameText.Foreground = Brushes.Gray;
+                    if (_callBtn != null) _callBtn.Background = _primaryColor;
+                    StopAnimation(_talkingPulse);
+                    StopAnimation(_outgoingPulse);
+                    StopAnimation(_incomingPulse);
+                    _callTimer?.Stop();
+                    break;
 
-            _outgoingNameText.Text = _statusNameText.Text; _outgoingNameText.Foreground = Brushes.Black;
-            StartAnimation(_outgoingPulse, 0.8);
-            _soundManager.Play(SoundManager.FILE_TORI);
-            await Task.Delay(800);
+                case PhoneStatus.Outgoing:
+                    SwitchView(_viewOutgoing);
+                    _outgoingNumberText.Text = _callService.ConnectedTargetName ?? "";
+                    _outgoingNameText.Text   = _callService.ConnectedTargetName ?? "";
+                    _outgoingNameText.Foreground = _callService.IsOnline ? Brushes.Black : Brushes.Red;
+                    StartAnimation(_outgoingPulse, 0.8);
+                    break;
 
-            if (CurrentStatus == PhoneStatus.Outgoing)
-            {
-                _commManager.SendCall(targetNum);
-                _soundManager.Play(SoundManager.FILE_YOBIDASHI, loop: true, loopIntervalMs: 2000);
+                case PhoneStatus.Talking:
+                    GoToTalkingScreen();
+                    break;
+
+                case PhoneStatus.Holding:
+                    _talkingStatusText.Text = _callService.HoldStatusText;
+                    StopAnimation(_talkingPulse);
+                    UpdateButtonVisuals();
+                    break;
             }
         }
 
-        private void HandleIncomingCall(string fromNumber, string callerId)
+        private void OnOnlineStateChanged(bool online)
         {
-            if (CurrentStatus != PhoneStatus.Idle) { _commManager.SendBusy(callerId); return; }
-            _connectedTargetNumber = fromNumber;
-            _targetConnectionId = callerId;
+            if (online)
+            {
+                Title = $"館浜電鉄 鉄道電話 - [{_callService.CurrentStation?.Name}]";
+                Background = _bgColor;
+                if (_selfStationDisplay != null)
+                {
+                    _selfStationDisplay.Text       = $"自局: {_callService.CurrentStation?.Name} ({_callService.CurrentStation?.Number})";
+                    _selfStationDisplay.Foreground = _primaryColor;
+                    _selfStationDisplay.Background = new SolidColorBrush(Color.FromRgb(230, 240, 255));
+                }
+            }
+            else
+            {
+                Title = $"[圏外] {_callService.CurrentStation?.Name}";
+                Background = _offlineBgColor;
+                if (_selfStationDisplay != null)
+                {
+                    _selfStationDisplay.Text       = "圏外";
+                    _selfStationDisplay.Foreground = Brushes.Gray;
+                    _selfStationDisplay.Background = Brushes.Transparent;
+                }
+            }
+        }
 
-            var entry = PhoneBook.Entries.FirstOrDefault(x => x.Number == fromNumber);
-            string name = entry != null ? entry.Name : "不明";
-
-            if (_viewIncoming is FrameworkElement fe) fe.Tag = new Tuple<string, int>("", 0);
-
-            ChangeStatus(PhoneStatus.Incoming); SwitchView(_viewIncoming);
-            _incomingNameText.Text = name; _incomingNumberText.Text = fromNumber;
+        private void OnIncomingCallReceived(string name, string number)
+        {
+            SwitchView(_viewIncoming);
+            _incomingNameText.Text   = name;
+            _incomingNumberText.Text = number;
             StartAnimation(_incomingPulse, 0.5);
-            _soundManager.Play(SoundManager.FILE_YOBI1, loop: true, loopIntervalMs: 1000);
-            new ToastContentBuilder().AddText("着信あり").AddText($"{name} ({fromNumber})").Show();
+            new ToastContentBuilder().AddText("着信あり").AddText($"{name} ({number})").Show();
         }
 
-        private void AnswerCall()
-        {
-            StopAnimation(_incomingPulse); _soundManager.Stop(); _soundManager.Play(SoundManager.FILE_TORI);
-            _commManager.SendAnswer(_connectedTargetNumber, _targetConnectionId);
-            StartVoiceTransmission(_targetConnectionId);
-            GoToTalkingScreen(false);
-        }
+        // --- 通話画面 ---
 
-        private void HandleAnswered(string responderId)
+        private void GoToTalkingScreen()
         {
-            if (CurrentStatus == PhoneStatus.Outgoing)
-            {
-                _soundManager.Stop();
-                _targetConnectionId = responderId;
-                StartVoiceTransmission(_targetConnectionId);
-                GoToTalkingScreen(true);
-            }
-        }
-
-        private void StartVoiceTransmission(string targetId)
-        {
-            int inDev = -1, outDevId = -1;
-            if (_currentInputDevice != null) int.TryParse(_currentInputDevice.ID, out inDev);
-            if (_normalOutputDevice != null) int.TryParse(_normalOutputDevice.ID, out outDevId);
-            _voiceManager.StartTransmission(_myConnectionId, targetId, SERVER_IP, SERVER_GRPC_PORT, inDev, outDevId);
-        }
-
-        private async void HandleBusySignal()
-        {
-            if (CurrentStatus != PhoneStatus.Outgoing) return;
-            _outgoingNameText.Text = "話中"; _outgoingNameText.Foreground = Brushes.Red;
-            StopAnimation(_outgoingPulse); _soundManager.Play(SoundManager.FILE_WATYU);
-            await Task.Delay(5000);
-            if (CurrentStatus == PhoneStatus.Outgoing) EndCall(false, false);
-        }
-
-        private async void HandleRejected()
-        {
-            if (CurrentStatus != PhoneStatus.Outgoing) return;
-            _outgoingNameText.Text = "事情によりお繋ぎできません"; _outgoingNameText.Foreground = Brushes.Red;
+            SwitchView(_viewTalking);
             StopAnimation(_outgoingPulse);
-            _soundManager.Stop();
-            if (_normalOutputDevice != null) _soundManager.SetOutputDevice(_normalOutputDevice.ID);
-            _soundManager.Play(SoundManager.FILE_WATYU);
-            await Task.Delay(5000);
-            if (CurrentStatus == PhoneStatus.Outgoing) EndCall(false, false);
-        }
-
-        private void EndCall(bool sendSignal = true, bool playSound = true)
-        {
-            // ★修正: 着信中の切断は「着信拒否」として送信 (true)
-            if (CurrentStatus == PhoneStatus.Incoming && sendSignal && !string.IsNullOrEmpty(_targetConnectionId))
-            {
-                _commManager.SendReject(_targetConnectionId);
-            }
-            else if (sendSignal && !string.IsNullOrEmpty(_targetConnectionId))
-            {
-                _commManager.SendHangup(_targetConnectionId);
-            }
-
-            _voiceManager.StopTransmission();
-            _connectedTargetNumber = null; _targetConnectionId = null;
-            StopAnimation(_talkingPulse); StopAnimation(_outgoingPulse); StopAnimation(_incomingPulse);
-            _callTimer?.Stop();
-            if (playSound)
-            {
-                if (_normalOutputDevice != null) _soundManager.SetOutputDevice(_normalOutputDevice.ID);
-                _soundManager.Play(SoundManager.FILE_OKI);
-            }
-            else _soundManager.Stop();
-
-            ChangeStatus(PhoneStatus.Idle); SwitchView(_viewKeypad);
-            _inputNumberBox.Text = ""; _statusNameText.Text = "宛先未指定"; _statusNameText.Foreground = Brushes.Gray;
-
-            // ★リセット時に発信ボタンを青に戻す
-            if (_callBtn != null) _callBtn.Background = _primaryColor;
-        }
-
-        // --- 通話中機能 ---
-
-        private void GoToTalkingScreen(bool isOutgoing)
-        {
-            ChangeStatus(PhoneStatus.Talking); SwitchView(_viewTalking); StopAnimation(_outgoingPulse);
-            _isMyHold = _isRemoteHold = _isMuted = _isSpeakerOn = false;
-
-            _talkingStatusText.Text = "通話中";
+            _talkingStatusText.Text       = "通話中";
             _talkingStatusText.Foreground = _acceptColor;
             if (_talkingIconBg != null) _talkingIconBg.Fill = _acceptColor;
-
             UpdateButtonVisuals();
             StartAnimation(_talkingPulse, 1.2);
+            _talkingNameText.Text = _callService.ConnectedTargetName ?? "";
 
-            if (isOutgoing) _talkingNameText.Text = _outgoingNameText.Text;
-            else _talkingNameText.Text = _incomingNameText.Text;
-
-            _callStartTime = DateTime.Now;
             _callTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _callTimer.Tick += (s, e) => _talkingTimerText.Text = DateTime.Now.Subtract(_callStartTime).ToString(@"mm\:ss");
+            _callTimer.Tick += (s, e) =>
+            {
+                if (_callService.CallStartTime.HasValue)
+                    _talkingTimerText.Text = DateTime.Now.Subtract(_callService.CallStartTime.Value).ToString(@"mm\:ss");
+            };
             _callTimer.Start();
-        }
-
-        private void ToggleMute() { _isMuted = !_isMuted; if (!_isHolding) _voiceManager.IsMuted = _isMuted; UpdateButtonVisuals(); }
-        private void ToggleSpeaker()
-        {
-            _isSpeakerOn = !_isSpeakerOn;
-            int id = -1; if (_isSpeakerOn && _speakerOutputDevice != null) int.TryParse(_speakerOutputDevice.ID, out id);
-            else if (!_isSpeakerOn && _normalOutputDevice != null) int.TryParse(_normalOutputDevice.ID, out id);
-            _voiceManager.ChangeOutputDevice(id); UpdateButtonVisuals();
-        }
-        private void ToggleHold()
-        {
-            if (_isRemoteHold) return;
-            _isMyHold = !_isMyHold;
-            if (_isMyHold) { _commManager.SendHold(_targetConnectionId); StartHoldState(true); }
-            else { _commManager.SendResume(_targetConnectionId); StopHoldState(); }
-            UpdateButtonVisuals();
-        }
-        private void HandleRemoteHold(bool isHold) { _isRemoteHold = isHold; if (isHold) StartHoldState(false); else StopHoldState(); UpdateButtonVisuals(); }
-
-        private void StartHoldState(bool self)
-        {
-            ChangeStatus(PhoneStatus.Holding); _isHolding = true; _voiceManager.IsMuted = true;
-            _soundManager.Play(SoundManager.FILE_HOLD1, true);
-            _talkingStatusText.Text = self ? "保留中" : "相手が保留"; StopAnimation(_talkingPulse);
-        }
-        private void StopHoldState()
-        {
-            ChangeStatus(PhoneStatus.Talking); _isHolding = false; _voiceManager.IsMuted = _isMuted;
-            _soundManager.Stop(); _talkingStatusText.Text = "通話中"; StartAnimation(_talkingPulse, 1.2);
         }
 
         private void UpdateButtonVisuals()
         {
             void Set(Button b, bool active) { if (b == null) return; b.Background = active ? _btnActiveBg : _btnInactiveBg; }
-            Set(_muteBtn, _isMuted); Set(_speakerBtn, _isSpeakerOn);
+            Set(_muteBtn, _callService.IsMuted);
+            Set(_speakerBtn, _callService.IsSpeakerOn);
             if (_holdBtn != null)
             {
                 var stack = _holdBtn.Content as StackPanel;
-                var text = stack?.Children[1] as TextBlock;
-                if (text != null) text.Text = _isMyHold ? "再 開" : "保 留";
+                var text  = stack?.Children[1] as TextBlock;
+                if (text != null) text.Text = _callService.IsMyHold ? "再 開" : "保 留";
             }
-            Set(_holdBtn, _isMyHold);
+            Set(_holdBtn, _callService.IsMyHold);
         }
 
-        // --- ヘルパーメソッド ---
-
-        private Grid CreatePulsingIcon(Brush color, out ScaleTransform transform)
-        {
-            var g = new Grid { Width = 100, Height = 100, Margin = new Thickness(0, 0, 0, 20) };
-            var el = new Ellipse { Fill = color, Opacity = 0.2 };
-            var tx = new TextBlock { Text = "📞", FontSize = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = color };
-            transform = new ScaleTransform(1.0, 1.0, 50, 50);
-            el.RenderTransform = transform;
-            g.Children.Add(el); g.Children.Add(tx);
-            return g;
-        }
-
-        // アイコン生成ヘルパー (位置調整版)
-        private object GetPhoneIcon(bool isHangUp)
-        {
-            var grid = new Grid { Width = 40, Height = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            var tb = new TextBlock
-            {
-                Text = "📞",
-                FontSize = 32,
-                FontWeight = FontWeights.Bold,
-                Foreground = Brushes.White,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                RenderTransformOrigin = new Point(0.5, 0.5),
-                TextAlignment = TextAlignment.Center
-            };
-
-            if (isHangUp)
-            {
-                tb.RenderTransform = new RotateTransform(135);
-                tb.Margin = new Thickness(0, 5, 0, 0);
-            }
-
-            grid.Children.Add(tb);
-            return grid;
-        }
-
-        private void SwitchView(UIElement visibleView)
-        {
-            _viewKeypad.Visibility = Visibility.Collapsed;
-            _viewTalking.Visibility = Visibility.Collapsed;
-            _viewIncoming.Visibility = Visibility.Collapsed;
-            _viewOutgoing.Visibility = Visibility.Collapsed;
-            visibleView.Visibility = Visibility.Visible;
-        }
-
-        private void StartAnimation(ScaleTransform target, double durationSec)
-        {
-            if (target == null) return;
-            var ax = new DoubleAnimation(1.0, 1.2, TimeSpan.FromSeconds(durationSec)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever };
-            var ay = new DoubleAnimation(1.0, 1.2, TimeSpan.FromSeconds(durationSec)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever };
-            target.BeginAnimation(ScaleTransform.ScaleXProperty, ax);
-            target.BeginAnimation(ScaleTransform.ScaleYProperty, ay);
-        }
-
-        private void StopAnimation(ScaleTransform target)
-        {
-            if (target == null) return;
-            target.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-            target.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-        }
+        // --- 設定画面 ---
 
         private void OpenStationSettings(object sender, RoutedEventArgs e)
         {
-            var win = new StationSelectionWindow(_currentStation);
+            var win = new StationSelectionWindow(_callService.CurrentStation);
             win.Owner = this;
             if (win.ShowDialog() == true)
             {
-                _currentStation = win.SelectedStation;
-                if (_commManager.IsConnected) { SetOnlineState(); _commManager.SendLogin(_currentStation.Number); } else SetOfflineState();
+                _callService.ChangeStation(win.SelectedStation);
             }
         }
 
@@ -426,10 +224,11 @@ namespace RailwayPhone
             win.Owner = this;
             if (win.ShowDialog() == true)
             {
-                _currentInputDevice = win.SelectedInput;
-                _normalOutputDevice = win.SelectedOutput;
-                _currentInputVol = win.InputVolume;
-                _currentOutputVol = win.OutputVolume;
+                _currentInputDevice  = win.SelectedInput;
+                _normalOutputDevice  = win.SelectedOutput;
+                _currentInputVol     = win.InputVolume;
+                _currentOutputVol    = win.OutputVolume;
+                _callService.UpdateAudioDevices(win.SelectedInput, win.SelectedOutput);
             }
         }
 
@@ -439,12 +238,11 @@ namespace RailwayPhone
             if (string.IsNullOrWhiteSpace(cur)) { _statusNameText.Text = "宛先未指定"; _statusNameText.Foreground = Brushes.Gray; }
             else
             {
-                var m = PhoneBook.Entries.FirstOrDefault(x => x.Number == cur);
+                var m = _phoneBookRepo.FindByNumber(cur);
                 if (m != null) { _statusNameText.Text = m.Name; _statusNameText.Foreground = Brushes.Black; _phoneBookList.SelectedItem = m; _phoneBookList.ScrollIntoView(m); }
                 else { _statusNameText.Text = "未登録の番号"; _statusNameText.Foreground = Brushes.Gray; _phoneBookList.SelectedItem = null; }
             }
 
-            // ★追加: 番号が入力されたら発信ボタンを緑色にする
             if (_callBtn != null)
             {
                 _callBtn.Background = cur.Length > 0 ? _acceptColor : _primaryColor;
@@ -485,7 +283,7 @@ namespace RailwayPhone
             _phoneBookList = new ListView { Background = Brushes.Transparent, BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch };
             ScrollViewer.SetHorizontalScrollBarVisibility(_phoneBookList, ScrollBarVisibility.Disabled);
 
-            // --- ListView Template (復旧) ---
+            // --- ListView Template ---
             var itemTemplate = new DataTemplate();
             var fb = new FrameworkElementFactory(typeof(Border));
             fb.SetValue(Border.BackgroundProperty, Brushes.White);
@@ -538,7 +336,7 @@ namespace RailwayPhone
             fb.AppendChild(fg);
             itemTemplate.VisualTree = fb;
             _phoneBookList.ItemTemplate = itemTemplate;
-            _phoneBookList.ItemsSource = PhoneBook.Entries;
+            _phoneBookList.ItemsSource = _phoneBookRepo.GetAll();
             _phoneBookList.SelectionChanged += (s, e) => {
                 var sel = _phoneBookList.SelectedItem as PhoneBookEntry;
                 if (sel != null) _inputNumberBox.Text = sel.Number;
@@ -589,16 +387,15 @@ namespace RailwayPhone
             int n = 1; for (int r = 0; r < 3; r++) for (int c = 0; c < 3; c++) { var b = CreateDialButton(n++.ToString()); Grid.SetRow(b, r); Grid.SetColumn(b, c); kg.Children.Add(b); }
             var b0 = CreateDialButton("0"); Grid.SetRow(b0, 3); Grid.SetColumn(b0, 1); kg.Children.Add(b0);
 
-            // ★修正: 取消ボタンを「⌫」に戻し、丸いスタイルを適用
             var bBS = new Button { Content = "⌫", FontSize = 24, FontWeight = FontWeights.Bold, Background = Brushes.WhiteSmoke, Foreground = Brushes.DimGray, BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1), Margin = new Thickness(5), Cursor = System.Windows.Input.Cursors.Hand };
             var sBS = new Style(typeof(Border)); sBS.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); bBS.Resources.Add(typeof(Border), sBS);
             bBS.Click += (s, e) => { if (_inputNumberBox.Text.Length > 0) _inputNumberBox.Text = _inputNumberBox.Text.Substring(0, _inputNumberBox.Text.Length - 1); }; Grid.SetRow(bBS, 3); Grid.SetColumn(bBS, 2); kg.Children.Add(bBS);
             p.Children.Add(kg);
 
-            // ★修正: 発信ボタンをフィールド変数 _callBtn に代入
             _callBtn = new Button { Content = GetPhoneIcon(false), Height = 50, Background = _primaryColor, Foreground = Brushes.White, Margin = new Thickness(10, 0, 10, 0) };
             var sC = new Style(typeof(Border)); sC.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(25))); _callBtn.Resources.Add(typeof(Border), sC);
-            _callBtn.Click += (s, e) => StartOutgoingCall(); p.Children.Add(_callBtn);
+            _callBtn.Click += (s, e) => _callService.StartCall(_inputNumberBox.Text.Trim());
+            p.Children.Add(_callBtn);
             return p;
         }
 
@@ -614,13 +411,12 @@ namespace RailwayPhone
 
             var ansBtn = new Button { Content = GetPhoneIcon(false), Height = 60, Background = _acceptColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
             var sA = new Style(typeof(Border)); sA.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); ansBtn.Resources.Add(typeof(Border), sA);
-            ansBtn.Click += (s, e) => AnswerCall(); Grid.SetColumn(ansBtn, 0); bg.Children.Add(ansBtn);
+            ansBtn.Click += (s, e) => _callService.AnswerCall();
+            Grid.SetColumn(ansBtn, 0); bg.Children.Add(ansBtn);
 
             var rb = new Button { Content = GetPhoneIcon(true), Height = 60, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
             var sR = new Style(typeof(Border)); sR.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); rb.Resources.Add(typeof(Border), sR);
-
-            // ★重要修正: 着信拒否 (true)
-            rb.Click += (s, e) => EndCall(true);
+            rb.Click += (s, e) => _callService.EndCall();
             Grid.SetColumn(rb, 2); bg.Children.Add(rb);
             p.Children.Add(bg);
             return p;
@@ -636,7 +432,8 @@ namespace RailwayPhone
 
             var cancelBtn = new Button { Content = GetPhoneIcon(true), Width = 200, Height = 60, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
             var sC = new Style(typeof(Border)); sC.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); cancelBtn.Resources.Add(typeof(Border), sC);
-            cancelBtn.Click += (s, e) => EndCall(true); p.Children.Add(cancelBtn);
+            cancelBtn.Click += (s, e) => _callService.EndCall();
+            p.Children.Add(cancelBtn);
             return p;
         }
 
@@ -662,15 +459,79 @@ namespace RailwayPhone
                 btn.Click += handler; btnRef = btn; labelRef = lbl; return btn;
             }
 
-            var b1 = CreateControlBtn("🔇", "ミュート", (s, e) => ToggleMute(), out _muteBtn, out _muteBtnLabel); Grid.SetColumn(b1, 0); bg.Children.Add(b1);
-            var b2 = CreateControlBtn("🔊", "スピーカー", (s, e) => ToggleSpeaker(), out _speakerBtn, out _muteBtnLabel); Grid.SetColumn(b2, 1); bg.Children.Add(b2);
-            var b3 = CreateControlBtn("⏸", "保 留", (s, e) => ToggleHold(), out _holdBtn, out _holdBtnLabel); Grid.SetColumn(b3, 2); bg.Children.Add(b3);
+            var b1 = CreateControlBtn("🔇", "ミュート", (s, e) => { _callService.ToggleMute();    UpdateButtonVisuals(); }, out _muteBtn, out _muteBtnLabel); Grid.SetColumn(b1, 0); bg.Children.Add(b1);
+            var b2 = CreateControlBtn("🔊", "スピーカー", (s, e) => { _callService.ToggleSpeaker(); UpdateButtonVisuals(); }, out _speakerBtn, out _muteBtnLabel); Grid.SetColumn(b2, 1); bg.Children.Add(b2);
+            var b3 = CreateControlBtn("⏸", "保 留", (s, e) => { _callService.ToggleHold();    UpdateButtonVisuals(); }, out _holdBtn, out _holdBtnLabel); Grid.SetColumn(b3, 2); bg.Children.Add(b3);
             p.Children.Add(bg);
 
             var endBtn = new Button { Content = GetPhoneIcon(true), Width = 80, Height = 80, Background = _dangerColor, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 20), Cursor = System.Windows.Input.Cursors.Hand };
             var sE = new Style(typeof(Border)); sE.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(40))); endBtn.Resources.Add(typeof(Border), sE);
-            endBtn.Click += (s, e) => EndCall(true); p.Children.Add(endBtn);
+            endBtn.Click += (s, e) => _callService.EndCall();
+            p.Children.Add(endBtn);
             return p;
+        }
+
+        // --- ヘルパーメソッド ---
+
+        private Grid CreatePulsingIcon(Brush color, out ScaleTransform transform)
+        {
+            var g = new Grid { Width = 100, Height = 100, Margin = new Thickness(0, 0, 0, 20) };
+            var el = new Ellipse { Fill = color, Opacity = 0.2 };
+            var tx = new TextBlock { Text = "📞", FontSize = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = color };
+            transform = new ScaleTransform(1.0, 1.0, 50, 50);
+            el.RenderTransform = transform;
+            g.Children.Add(el); g.Children.Add(tx);
+            return g;
+        }
+
+        private object GetPhoneIcon(bool isHangUp)
+        {
+            var grid = new Grid { Width = 40, Height = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var tb = new TextBlock
+            {
+                Text = "📞",
+                FontSize = 32,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                TextAlignment = TextAlignment.Center
+            };
+
+            if (isHangUp)
+            {
+                tb.RenderTransform = new RotateTransform(135);
+                tb.Margin = new Thickness(0, 5, 0, 0);
+            }
+
+            grid.Children.Add(tb);
+            return grid;
+        }
+
+        private void SwitchView(UIElement visibleView)
+        {
+            _viewKeypad.Visibility = Visibility.Collapsed;
+            _viewTalking.Visibility = Visibility.Collapsed;
+            _viewIncoming.Visibility = Visibility.Collapsed;
+            _viewOutgoing.Visibility = Visibility.Collapsed;
+            visibleView.Visibility = Visibility.Visible;
+        }
+
+        private void StartAnimation(ScaleTransform target, double durationSec)
+        {
+            if (target == null) return;
+            var ax = new DoubleAnimation(1.0, 1.2, TimeSpan.FromSeconds(durationSec)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever };
+            var ay = new DoubleAnimation(1.0, 1.2, TimeSpan.FromSeconds(durationSec)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever };
+            target.BeginAnimation(ScaleTransform.ScaleXProperty, ax);
+            target.BeginAnimation(ScaleTransform.ScaleYProperty, ay);
+        }
+
+        private void StopAnimation(ScaleTransform target)
+        {
+            if (target == null) return;
+            target.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            target.BeginAnimation(ScaleTransform.ScaleYProperty, null);
         }
 
         private Button CreateDialButton(string t)
