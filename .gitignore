@@ -16,3 +16,4 @@
 
 # Git worktrees
 .worktrees/
+**/ServerAddress.cs

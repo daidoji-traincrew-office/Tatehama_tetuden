@@ -59,7 +59,7 @@ namespace Tatehama_tetuden
 
                                 options.AddRegistration(new OpenIddictClientRegistration
                                 {
-                                    Issuer = new Uri("http://127.0.0.1:8888/", UriKind.Absolute), // サーバーURL
+                                    Issuer = new Uri(ServerAddress.SignalAddress, UriKind.Absolute), // サーバーURL
                                     ClientId = "railway-phone-client",
                                     RedirectUri = new Uri("/", UriKind.Relative)
                                 });
