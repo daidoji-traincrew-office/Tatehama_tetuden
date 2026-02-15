@@ -66,11 +66,12 @@ namespace RailwayPhone
             _phoneBookRepo = phoneBookRepo;
             _audioDeviceRepo = audioDeviceRepo;
 
-            // ウィンドウの基本設定
+            // ウィンドウの基本設定（初期状態は圏外）
             Width = 950;
             Height = 650;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            Background = _bgColor;
+            Title = "[圏外] 館浜電鉄 鉄道電話";
+            Background = _offlineBgColor;
 
             // UI を構築（駅情報なしで）
             InitializeComponents();
@@ -411,7 +412,7 @@ namespace RailwayPhone
         {
             var p = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Width = 280 };
 
-            _selfStationDisplay = new TextBlock { Foreground = _primaryColor, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 30), FontWeight = FontWeights.Bold, Background = new SolidColorBrush(Color.FromRgb(230, 240, 255)), Padding = new Thickness(10, 5, 10, 5) }; p.Children.Add(_selfStationDisplay);
+            _selfStationDisplay = new TextBlock { Text = "圏外", Foreground = Brushes.Gray, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 30), FontWeight = FontWeights.Bold, Background = Brushes.Transparent, Padding = new Thickness(10, 5, 10, 5) }; p.Children.Add(_selfStationDisplay);
             _statusNameText = new TextBlock { Text = "宛先未指定", FontSize = 20, HorizontalAlignment = HorizontalAlignment.Center, FontWeight = FontWeights.Light, Foreground = Brushes.Gray, Margin = new Thickness(0, 0, 0, 20) }; p.Children.Add(_statusNameText);
             _inputNumberBox = new TextBox { FontSize = 36, HorizontalContentAlignment = HorizontalAlignment.Center, FontWeight = FontWeights.Bold, BorderThickness = new Thickness(0, 0, 0, 2), BorderBrush = _primaryColor, Background = Brushes.Transparent, Margin = new Thickness(0, 0, 0, 30) }; _inputNumberBox.TextChanged += OnInputNumberChanged; p.Children.Add(_inputNumberBox);
 
