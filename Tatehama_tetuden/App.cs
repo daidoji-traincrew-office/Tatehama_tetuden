@@ -51,6 +51,8 @@ namespace RailwayPhone
                                     .AddDevelopmentSigningCertificate();
 
                                 options.UseSystemIntegration();
+                                options.UseSystemNetHttp()
+                                    .SetProductInformation(typeof(App).Assembly);
 
                                 options.AddRegistration(new OpenIddictClientRegistration
                                 {
