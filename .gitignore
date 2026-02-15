@@ -13,3 +13,6 @@
 
 **/bin/
 **/obj/
+
+# Git worktrees
+.worktrees/

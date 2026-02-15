@@ -27,7 +27,7 @@ public class VoiceService : IVoiceService
 
     public bool IsMuted { get; set; } = false;
 
-    public async void StartTransmission(string myId, string targetId, string serverIp, int serverPort, int inputDevId, int outputDevId)
+    public async void StartTransmission(string myId, string targetId, string serverIp, int serverPort, int inputDevId, int outputDevId, string? accessToken = null)
     {
         if (_isActive) _ = StopTransmission();
 
@@ -50,7 +50,15 @@ public class VoiceService : IVoiceService
 
             _client = new VoiceRelay.VoiceRelayClient(_channel);
 
-            _call = _client.JoinSession();
+            // Metadata でトークンを送信
+            var metadata = new Metadata();
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                metadata.Add("authorization", $"Bearer {accessToken}");
+            }
+
+            var callOptions = new CallOptions(headers: metadata);
+            _call = _client.JoinSession(callOptions);
             _isActive = true;
 
             _ = Task.Run(ReceiveLoop);

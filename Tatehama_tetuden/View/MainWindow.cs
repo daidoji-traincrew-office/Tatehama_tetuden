@@ -19,10 +19,11 @@ namespace RailwayPhone
         // --- サービス・リポジトリ ---
         private readonly CallService         _callService;
         private readonly PhoneBookRepository _phoneBookRepo;
+        private readonly AudioDeviceRepository _audioDeviceRepo;
 
         // デバイス・音量（設定画面と連携するためView側に残す）
-        private DeviceInfo _currentInputDevice;
-        private DeviceInfo _normalOutputDevice;
+        private DeviceInfo? _currentInputDevice;
+        private DeviceInfo? _normalOutputDevice;
         private float _currentInputVol = 1.0f;
         private float _currentOutputVol = 1.0f;
 
@@ -56,36 +57,54 @@ namespace RailwayPhone
         private readonly Brush _btnInactiveBg = new SolidColorBrush(Colors.Transparent);
         private readonly Brush _btnInactiveFg = new SolidColorBrush(Colors.Gray);
 
-        public MainWindow(PhoneBookEntry station)
+        /// <summary>
+        /// DI コンストラクタ（サービスのみを受け取る）
+        /// </summary>
+        public MainWindow(CallService callService, PhoneBookRepository phoneBookRepo, AudioDeviceRepository audioDeviceRepo)
         {
-            if (station == null) station = new PhoneBookEntry { Name = "設定なし", Number = "000" };
+            _callService = callService;
+            _phoneBookRepo = phoneBookRepo;
+            _audioDeviceRepo = audioDeviceRepo;
 
-            Title = $"館浜電鉄 鉄道電話 - [{station.Name}]";
-            Width = 950; Height = 650;
+            // ウィンドウの基本設定
+            Width = 950;
+            Height = 650;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = _bgColor;
 
-            _phoneBookRepo = new PhoneBookRepository();
-
-            _callService = new CallService(
-                new SignalingService(),
-                new VoiceService(),
-                new SoundService(),
-                _phoneBookRepo
-            );
-            _callService.Initialize(station, null, null,
-                new DeviceInfo { ID = "-1", Name = "既定のスピーカー" });
-
+            // UI を構築（駅情報なしで）
             InitializeComponents();
             SubscribeToCallService();
-
-            _ = _callService.ConnectAsync();
 
             Closing += (s, e) =>
             {
                 _ = _callService.DisposeAsync();
                 ToastNotificationManagerCompat.Uninstall();
             };
+        }
+
+        /// <summary>
+        /// 認証後に駅を設定して初期化
+        /// </summary>
+        public async Task InitializeWithStationAsync(PhoneBookEntry station)
+        {
+            if (station == null)
+            {
+                station = new PhoneBookEntry { Name = "設定なし", Number = "000" };
+            }
+
+            Title = $"館浜電鉄 鉄道電話 - [{station.Name}]";
+
+            // オーディオデバイスの設定
+            var inputDevices = _audioDeviceRepo.GetInputDevices();
+            var outputDevices = _audioDeviceRepo.GetOutputDevices();
+
+            _currentInputDevice = inputDevices.Count > 0 ? inputDevices[0] : null;
+            _normalOutputDevice = outputDevices.Count > 0 ? outputDevices[0] : null;
+            var speakerOutputDevice = new DeviceInfo { ID = "-1", Name = "既定のスピーカー" };
+
+            _callService.Initialize(station, _currentInputDevice, _normalOutputDevice, speakerOutputDevice);
+            await _callService.ConnectAsync();
         }
 
         // --- CallService イベント配線 ---
@@ -207,11 +226,13 @@ namespace RailwayPhone
 
         // --- 設定画面 ---
 
-        private void OpenStationSettings(object sender, RoutedEventArgs e)
+        private async void OpenStationSettings(object sender, RoutedEventArgs e)
         {
-            var win = new StationSelectionWindow(_callService.CurrentStation);
+            // 全駅リストを取得（認証後は許可された駅のみになるべきだが、ここでは全駅を表示）
+            var allStations = await _phoneBookRepo.GetAllStationsAsync();
+            var win = new StationSelectionWindow(allStations, _callService.CurrentStation);
             win.Owner = this;
-            if (win.ShowDialog() == true)
+            if (win.ShowDialog() == true && win.SelectedStation != null)
             {
                 _ = _callService.ChangeStation(win.SelectedStation);
             }

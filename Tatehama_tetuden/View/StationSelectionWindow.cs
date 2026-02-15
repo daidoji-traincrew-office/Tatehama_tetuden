@@ -15,7 +15,7 @@ namespace RailwayPhone
         #region 公開プロパティ
 
         /// <summary>ユーザーによって選択された駅情報</summary>
-        public PhoneBookEntry SelectedStation { get; private set; }
+        public PhoneBookEntry? SelectedStation { get; private set; }
 
         #endregion
 
@@ -32,12 +32,21 @@ namespace RailwayPhone
 
         #endregion
 
+        #region フィールド
+
+        private readonly System.Collections.Generic.List<PhoneBookEntry> _allowedStations;
+
+        #endregion
+
         /// <summary>
         /// コンストラクタ
         /// </summary>
+        /// <param name="allowedStations">ユーザーに許可された駅のリスト</param>
         /// <param name="currentStation">現在設定されている駅（変更時の初期選択用、省略可）</param>
-        public StationSelectionWindow(PhoneBookEntry currentStation = null)
+        public StationSelectionWindow(System.Collections.Generic.List<PhoneBookEntry> allowedStations, PhoneBookEntry? currentStation = null)
         {
+            _allowedStations = allowedStations ?? new System.Collections.Generic.List<PhoneBookEntry>();
+
             // ウィンドウの基本設定
             Title = "自局設定";
             Width = 400;
@@ -100,14 +109,14 @@ namespace RailwayPhone
                 FontWeight = FontWeights.Bold
             });
 
-            // コンボボックス（電話帳リストを表示）
+            // コンボボックス（許可された駅リストを表示）
             _stationCombo = new ComboBox
             {
                 Height = 35,
                 Margin = new Thickness(0, 0, 0, 10),
                 Padding = new Thickness(5),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                ItemsSource = new PhoneBookRepository().GetAll(),
+                ItemsSource = _allowedStations,
                 DisplayMemberPath = "Name" // オブジェクトのどのプロパティを表示するか
             };
 
@@ -122,6 +131,11 @@ namespace RailwayPhone
                         break;
                     }
                 }
+            }
+            else if (_allowedStations.Count > 0)
+            {
+                // 初期選択がない場合、最初の駅を選択
+                _stationCombo.SelectedIndex = 0;
             }
 
             cardStack.Children.Add(_stationCombo);

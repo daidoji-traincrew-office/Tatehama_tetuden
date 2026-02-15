@@ -26,12 +26,19 @@ public class SignalingService : ISignalingService
 
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
-    public async Task<bool> ConnectAsync(string ipAddress, int port)
+    public async Task<bool> ConnectAsync(string ipAddress, int port, string? accessToken = null)
     {
         if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected) return true;
         try
         {
             string url = $"http://{ipAddress}:{port}/phoneHub";
+
+            // トークンをクエリ文字列に追加
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                url += $"?access_token={accessToken}";
+            }
+
             if (_hubConnection != null) await _hubConnection.DisposeAsync();
 
             _hubConnection = new HubConnectionBuilder()

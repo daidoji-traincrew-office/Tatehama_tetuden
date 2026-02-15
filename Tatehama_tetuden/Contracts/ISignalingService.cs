@@ -4,7 +4,7 @@ public interface ISignalingService : IDisposable, IAsyncDisposable
 {
     bool IsConnected { get; }
 
-    Task<bool> ConnectAsync(string ipAddress, int port);
+    Task<bool> ConnectAsync(string ipAddress, int port, string? accessToken = null);
     Task SendLogin(string myNumber);
     Task SendCall(string targetNumber);
     Task SendAnswer(string targetNumber, string callerId);

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace RailwayPhone
 {
@@ -38,6 +39,12 @@ namespace RailwayPhone
         };
 
         public List<PhoneBookEntry> GetAll() => _entries;
+
+        public Task<List<PhoneBookEntry>> GetAllStationsAsync()
+        {
+            // 非同期版（現時点では単純にラップするだけ）
+            return Task.FromResult(_entries.ToList());
+        }
 
         public PhoneBookEntry? FindByNumber(string number)
             => _entries.FirstOrDefault(e => e.Number == number);

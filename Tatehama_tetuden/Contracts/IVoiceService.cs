@@ -4,7 +4,7 @@ public interface IVoiceService : IDisposable
 {
     bool IsMuted { get; set; }
 
-    void StartTransmission(string myId, string targetId, string serverIp, int serverPort, int inputDevId, int outputDevId);
+    void StartTransmission(string myId, string targetId, string serverIp, int serverPort, int inputDevId, int outputDevId, string? accessToken = null);
     Task StopTransmission();
     void ChangeOutputDevice(int outputDeviceId);
 }

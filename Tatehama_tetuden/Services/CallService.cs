@@ -10,6 +10,7 @@ namespace RailwayPhone
         private readonly IVoiceService       _voice;
         private readonly ISoundService       _sound;
         private readonly PhoneBookRepository _phoneBookRepo;
+        private readonly IAuthenticationService _auth;
 
         // --- サーバー接続設定 ---
         private const string SERVER_IP        = "127.0.0.1";
@@ -47,12 +48,13 @@ namespace RailwayPhone
         public event Action?                   CallEnded;
 
         /// <summary>コンストラクタインジェクション。テストでモックを渡す。</summary>
-        public CallService(ISignalingService signaling, IVoiceService voice, ISoundService sound, PhoneBookRepository phoneBookRepo)
+        public CallService(ISignalingService signaling, IVoiceService voice, ISoundService sound, PhoneBookRepository phoneBookRepo, IAuthenticationService auth)
         {
             _signaling     = signaling;
             _voice         = voice;
             _sound         = sound;
             _phoneBookRepo = phoneBookRepo;
+            _auth          = auth;
         }
 
         // --- 初期化 ---
@@ -71,7 +73,19 @@ namespace RailwayPhone
 
         public async Task ConnectAsync()
         {
-            bool success = await _signaling.ConnectAsync(SERVER_IP, SERVER_PORT);
+            // トークンを取得
+            string? token = _auth.GetAccessToken();
+            if (token == null)
+            {
+                // トークンが期限切れの場合、更新を試みる
+                bool refreshed = await _auth.RefreshTokenAsync();
+                if (refreshed)
+                {
+                    token = _auth.GetAccessToken();
+                }
+            }
+
+            bool success = await _signaling.ConnectAsync(SERVER_IP, SERVER_PORT, token);
             if (success)
             {
                 await _signaling.SendLogin(CurrentStation!.Number);
@@ -307,10 +321,13 @@ namespace RailwayPhone
 
         private void StartVoiceTransmission(string targetId)
         {
+            // トークンを取得
+            string? token = _auth.GetAccessToken();
+
             int inDev = -1, outDevId = -1;
             if (_currentInputDevice != null)  int.TryParse(_currentInputDevice.ID,  out inDev);
             if (_normalOutputDevice != null)  int.TryParse(_normalOutputDevice.ID,  out outDevId);
-            _voice.StartTransmission(_myConnectionId ?? "", targetId, SERVER_IP, SERVER_GRPC_PORT, inDev, outDevId);
+            _voice.StartTransmission(_myConnectionId ?? "", targetId, SERVER_IP, SERVER_GRPC_PORT, inDev, outDevId, token);
         }
 
         private async Task EndCallInternal(bool sendSignal, bool playSound)
