@@ -1,3 +1,4 @@
+using Tatehama_tetuden;
 using Tatehama_tetuden.Contracts;
 using Tatehama_tetuden.Models;
 using Tatehama_tetuden.Repositories;
@@ -12,11 +13,6 @@ namespace Tatehama_tetuden.Services
         private readonly ISoundService       _sound;
         private readonly PhoneBookRepository _phoneBookRepo;
         private readonly IAuthenticationService _auth;
-
-        // --- サーバー接続設定 ---
-        private const string SERVER_IP        = "127.0.0.1";
-        private const int    SERVER_PORT      = 8888;
-        private const int    SERVER_GRPC_PORT = 8889;
 
         // --- オーディオデバイス ---
         private DeviceInfo? _currentInputDevice;
@@ -86,7 +82,7 @@ namespace Tatehama_tetuden.Services
                 }
             }
 
-            bool success = await _signaling.ConnectAsync(SERVER_IP, SERVER_PORT, token);
+            bool success = await _signaling.ConnectAsync(token);
             if (success)
             {
                 await _signaling.SendLogin(CurrentStation!.Number);
@@ -328,7 +324,7 @@ namespace Tatehama_tetuden.Services
             int inDev = -1, outDevId = -1;
             if (_currentInputDevice != null)  int.TryParse(_currentInputDevice.ID,  out inDev);
             if (_normalOutputDevice != null)  int.TryParse(_normalOutputDevice.ID,  out outDevId);
-            _voice.StartTransmission(_myConnectionId ?? "", targetId, SERVER_IP, SERVER_GRPC_PORT, inDev, outDevId, token);
+            _voice.StartTransmission(_myConnectionId ?? "", targetId, ServerAddress.SignalRHost, ServerAddress.GrpcPort, inDev, outDevId, token);
         }
 
         private async Task EndCallInternal(bool sendSignal, bool playSound)
