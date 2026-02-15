@@ -252,6 +252,16 @@ namespace RailwayPhone
             }
         }
 
+        private async void OnLoginClicked(object sender, RoutedEventArgs e)
+        {
+            // App の認証フローを実行
+            var app = Application.Current as App;
+            if (app != null)
+            {
+                await app.TryAuthenticationFlowAsync();
+            }
+        }
+
         private void OnInputNumberChanged(object s, TextChangedEventArgs e)
         {
             string cur = _inputNumberBox.Text;
@@ -279,6 +289,10 @@ namespace RailwayPhone
             DockPanel.SetDock(menu, Dock.Top);
 
             var settingsItem = new MenuItem { Header = "設定(_S)" };
+            var loginItem = new MenuItem { Header = "ログイン(_L)..." };
+            loginItem.Click += OnLoginClicked;
+            settingsItem.Items.Add(loginItem);
+            settingsItem.Items.Add(new Separator());
             var audioItem = new MenuItem { Header = "音声設定(_A)..." };
             audioItem.Click += OpenAudioSettings;
             settingsItem.Items.Add(audioItem);

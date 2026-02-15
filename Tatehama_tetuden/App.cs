@@ -87,62 +87,77 @@ namespace RailwayPhone
         }
 
         /// <summary>
-        /// アプリケーションの初期化フロー: 認証 → 駅選択 → MainWindow 表示
+        /// アプリケーションの初期化フロー: MainWindow 表示 → バックグラウンドで認証
         /// </summary>
         private async Task InitializeApplicationAsync()
         {
             try
             {
-                // 1. 認証処理を実行
-                var authService = _host!.Services.GetRequiredService<IAuthenticationService>();
-                bool authSuccess = await authService.AuthorizeAsync();
+                // 1. MainWindow を先に表示
+                var mainWindow = _host!.Services.GetRequiredService<MainWindow>();
+                ShutdownMode = ShutdownMode.OnMainWindowClose;
+                mainWindow.Show();
 
-                if (!authSuccess)
+                // 2. バックグラウンドで認証を試みる
+                _ = Task.Run(async () =>
                 {
-                    MessageBox.Show("認証に失敗しました。アプリケーションを終了します。", "認証失敗", MessageBoxButton.OK, MessageBoxImage.Error);
-                    Shutdown();
-                    return;
-                }
-
-                // 2. 認証成功後、駅選択画面を表示
-                var phoneBookRepo = _host.Services.GetRequiredService<PhoneBookRepository>();
-                var allowedStations = await authService.GetAllowedStationsAsync(phoneBookRepo);
-
-                if (allowedStations.Count == 0)
-                {
-                    MessageBox.Show("利用可能な駅がありません。管理者に連絡してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                    Shutdown();
-                    return;
-                }
-
-                var selectionWindow = new StationSelectionWindow(allowedStations);
-                bool? result = selectionWindow.ShowDialog();
-
-                if (result == true)
-                {
-                    // 3. 駅選択後、MainWindow を初期化して表示
-                    var selectedStation = selectionWindow.SelectedStation;
-                    if (selectedStation == null)
-                    {
-                        selectedStation = new PhoneBookEntry { Name = "緊急用予備端末", Number = "999" };
-                    }
-
-                    var mainWindow = _host.Services.GetRequiredService<MainWindow>();
-                    await mainWindow.InitializeWithStationAsync(selectedStation);
-
-                    ShutdownMode = ShutdownMode.OnMainWindowClose;
-                    mainWindow.Show();
-                }
-                else
-                {
-                    // キャンセルされたら終了
-                    Shutdown();
-                }
+                    await Task.Delay(500); // UI の初期化を待つ
+                    await TryAuthenticationFlowAsync();
+                });
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"初期化エラー: {ex.Message}\n\n{ex.StackTrace}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                Shutdown();
+            }
+        }
+
+        /// <summary>
+        /// 認証フローを実行（起動時またはログインボタンから呼ばれる）
+        /// </summary>
+        public async Task TryAuthenticationFlowAsync()
+        {
+            try
+            {
+                var authService = _host!.Services.GetRequiredService<IAuthenticationService>();
+                var phoneBookRepo = _host.Services.GetRequiredService<PhoneBookRepository>();
+
+                // 認証処理を実行
+                bool authSuccess = await authService.AuthorizeAsync();
+
+                if (!authSuccess)
+                {
+                    // 認証失敗してもプログラムは継続
+                    return;
+                }
+
+                // 認証成功後、駅選択画面を表示（UI スレッドで）
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    var allowedStations = await authService.GetAllowedStationsAsync(phoneBookRepo);
+
+                    if (allowedStations.Count == 0)
+                    {
+                        MessageBox.Show("利用可能な駅がありません。管理者に連絡してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    var selectionWindow = new StationSelectionWindow(allowedStations);
+                    bool? result = selectionWindow.ShowDialog();
+
+                    if (result == true && selectionWindow.SelectedStation != null)
+                    {
+                        // MainWindow を取得して初期化
+                        var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+                        await mainWindow.InitializeWithStationAsync(selectionWindow.SelectedStation);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"認証エラー: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                });
             }
         }
 
