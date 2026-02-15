@@ -38,6 +38,10 @@ namespace Tatehama_tetuden.Services
         /// </summary>
         public async Task<bool> AuthorizeAsync()
         {
+            if (ServerAddress.IsDebug)
+            {
+                return true;
+            }
             using var source = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             try
             {
@@ -157,6 +161,11 @@ namespace Tatehama_tetuden.Services
         /// </summary>
         public async Task<List<PhoneBookEntry>> GetAllowedStationsAsync(PhoneBookRepository phoneBookRepo)
         {
+            if (ServerAddress.IsDebug)
+            {
+                return phoneBookRepo.GetAll();
+            }
+
             // JWT トークンからクレームを読み取る
             var handler = new JwtSecurityTokenHandler();
 
