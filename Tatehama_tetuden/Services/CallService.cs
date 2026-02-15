@@ -324,7 +324,7 @@ namespace Tatehama_tetuden.Services
             int inDev = -1, outDevId = -1;
             if (_currentInputDevice != null)  int.TryParse(_currentInputDevice.ID,  out inDev);
             if (_normalOutputDevice != null)  int.TryParse(_normalOutputDevice.ID,  out outDevId);
-            _voice.StartTransmission(_myConnectionId ?? "", targetId, ServerAddress.SignalRHost, ServerAddress.GrpcPort, inDev, outDevId, token);
+            _voice.StartTransmission(_myConnectionId ?? "", targetId, inDev, outDevId, token);
         }
 
         private async Task EndCallInternal(bool sendSignal, bool playSound)

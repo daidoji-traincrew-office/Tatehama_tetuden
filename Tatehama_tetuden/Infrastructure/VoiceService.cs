@@ -5,6 +5,7 @@ using NAudio.Codecs;
 using NAudio.Wave;
 using RailwayPhone.Protos;
 using Tatehama_tetuden.Contracts;
+using Tatehama_tetuden;
 
 namespace Tatehama_tetuden.Infrastructure;
 
@@ -26,7 +27,7 @@ public class VoiceService : IVoiceService
 
     public bool IsMuted { get; set; } = false;
 
-    public async void StartTransmission(string myId, string targetId, string serverIp, int serverPort, int inputDevId, int outputDevId, string? accessToken = null)
+    public async void StartTransmission(string myId, string targetId, int inputDevId, int outputDevId, string? accessToken = null)
     {
         if (_isActive) _ = StopTransmission();
 
@@ -37,7 +38,7 @@ public class VoiceService : IVoiceService
 
         try
         {
-            string url = $"http://{serverIp}:{serverPort}";
+            string url = ServerAddress.GrpcAddress;
 
             _channel = GrpcChannel.ForAddress(url, new GrpcChannelOptions
             {
