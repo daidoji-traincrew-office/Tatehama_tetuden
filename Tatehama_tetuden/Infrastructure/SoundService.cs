@@ -1,8 +1,8 @@
-using System;
 using System.IO;
 using NAudio.Wave;
+using Tatehama_tetuden.Contracts;
 
-namespace RailwayPhone;
+namespace Tatehama_tetuden.Infrastructure;
 
 public class SoundService : ISoundService
 {

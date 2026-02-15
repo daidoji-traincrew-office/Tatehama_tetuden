@@ -1,8 +1,6 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using Tatehama_tetuden.Models;
 
-namespace RailwayPhone
+namespace Tatehama_tetuden.Repositories
 {
     public class PhoneBookRepository
     {

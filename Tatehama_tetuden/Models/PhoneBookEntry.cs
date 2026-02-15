@@ -1,4 +1,4 @@
-namespace RailwayPhone;
+namespace Tatehama_tetuden.Models;
 
 public class PhoneBookEntry
 {

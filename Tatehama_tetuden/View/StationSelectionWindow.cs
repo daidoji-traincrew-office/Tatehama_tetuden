@@ -2,9 +2,9 @@
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
-using System.Windows.Shapes;
+using Tatehama_tetuden.Models;
 
-namespace RailwayPhone
+namespace Tatehama_tetuden.View
 {
     /// <summary>
     /// アプリケーション起動時または設定変更時に、

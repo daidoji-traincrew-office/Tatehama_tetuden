@@ -1,4 +1,4 @@
-namespace RailwayPhone;
+namespace Tatehama_tetuden.Contracts;
 
 public interface ISignalingService : IDisposable, IAsyncDisposable
 {

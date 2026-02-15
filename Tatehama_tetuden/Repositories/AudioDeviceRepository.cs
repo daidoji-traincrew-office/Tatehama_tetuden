@@ -1,7 +1,7 @@
-using System.Collections.Generic;
 using NAudio.CoreAudioApi;
+using Tatehama_tetuden.Models;
 
-namespace RailwayPhone
+namespace Tatehama_tetuden.Repositories
 {
     public class AudioDeviceRepository
     {

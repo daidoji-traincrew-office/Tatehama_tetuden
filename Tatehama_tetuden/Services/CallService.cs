@@ -1,7 +1,8 @@
-using System;
-using System.Threading.Tasks;
+using Tatehama_tetuden.Contracts;
+using Tatehama_tetuden.Models;
+using Tatehama_tetuden.Repositories;
 
-namespace RailwayPhone
+namespace Tatehama_tetuden.Services
 {
     public class CallService : IDisposable, IAsyncDisposable
     {

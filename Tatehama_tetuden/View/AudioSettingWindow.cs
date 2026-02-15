@@ -1,13 +1,13 @@
-﻿using System;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using System.Windows.Media.Effects;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using Tatehama_tetuden.Models;
+using Tatehama_tetuden.Repositories;
 
-namespace RailwayPhone
+namespace Tatehama_tetuden.View
 {
     /// <summary>
     /// 音声デバイス（マイク・スピーカー）の選択と音量調整、

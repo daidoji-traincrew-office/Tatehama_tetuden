@@ -1,10 +1,8 @@
-using System;
-using System.Collections.Generic;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR.Client;
+using Tatehama_tetuden.Contracts;
 
-namespace RailwayPhone;
+namespace Tatehama_tetuden.Infrastructure;
 
 public class SignalingService : ISignalingService
 {

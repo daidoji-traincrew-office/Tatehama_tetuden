@@ -1,18 +1,17 @@
-using System;
-using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
-using System.Windows.Shapes;
-using System.Windows.Media.Effects;
-using System.Windows.Threading;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 using CommunityToolkit.WinUI.Notifications;
-using System.Threading.Tasks;
-using System.Collections.Generic;
+using Tatehama_tetuden.Models;
+using Tatehama_tetuden.Repositories;
+using Tatehama_tetuden.Services;
 
-namespace RailwayPhone
+namespace Tatehama_tetuden.View
 {
     public class MainWindow : Window
     {

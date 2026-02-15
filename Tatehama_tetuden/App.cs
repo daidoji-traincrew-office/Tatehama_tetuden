@@ -1,14 +1,17 @@
-using System;
 using System.IO;
-using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenIddict.Client;
+using Tatehama_tetuden.Contracts;
+using Tatehama_tetuden.Infrastructure;
+using Tatehama_tetuden.Repositories;
+using Tatehama_tetuden.Services;
+using Tatehama_tetuden.View;
 
-namespace RailwayPhone
+namespace Tatehama_tetuden
 {
     /// <summary>
     /// アプリケーションクラス - IHost ベースの DI コンテナをセットアップ

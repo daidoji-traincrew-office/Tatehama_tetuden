@@ -1,13 +1,12 @@
-using System;
 using System.Net.Http;
-using System.Threading.Tasks;
 using Grpc.Core;
 using Grpc.Net.Client;
-using NAudio.Wave;
 using NAudio.Codecs;
+using NAudio.Wave;
 using RailwayPhone.Protos;
+using Tatehama_tetuden.Contracts;
 
-namespace RailwayPhone;
+namespace Tatehama_tetuden.Infrastructure;
 
 public class VoiceService : IVoiceService
 {

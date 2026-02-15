@@ -1,8 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using Tatehama_tetuden.Models;
+using Tatehama_tetuden.Repositories;
 
-namespace RailwayPhone
+namespace Tatehama_tetuden.Contracts
 {
     /// <summary>
     /// 認証サービスのインターフェース

@@ -1,15 +1,13 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IdentityModel.Tokens.Jwt;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using OpenIddict.Abstractions;
 using OpenIddict.Client;
+using Tatehama_tetuden.Contracts;
+using Tatehama_tetuden.Models;
+using Tatehama_tetuden.Repositories;
 
-namespace RailwayPhone
+namespace Tatehama_tetuden.Services
 {
     /// <summary>
     /// OpenIddict を使用した認証サービス実装
