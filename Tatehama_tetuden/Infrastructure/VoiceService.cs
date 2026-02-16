@@ -1,6 +1,7 @@
 using System.Net.Http;
 using Grpc.Core;
 using Grpc.Net.Client;
+using Microsoft.Extensions.Logging;
 using NAudio.Codecs;
 using NAudio.Wave;
 using RailwayPhone.Protos;
@@ -11,6 +12,7 @@ namespace Tatehama_tetuden.Infrastructure;
 
 public class VoiceService : IVoiceService
 {
+    private readonly ILogger<VoiceService> _logger;
     private readonly WaveFormat _format = new WaveFormat(8000, 16, 1);
 
     private GrpcChannel? _channel;
@@ -23,13 +25,18 @@ public class VoiceService : IVoiceService
 
     private string? _myId;
     private string? _targetId;
-    private bool _isActive = false;
+    private volatile bool _isActive = false;
+
+    public VoiceService(ILogger<VoiceService> logger)
+    {
+        _logger = logger;
+    }
 
     public bool IsMuted { get; set; } = false;
 
-    public async void StartTransmission(string myId, string targetId, int inputDevId, int outputDevId, string? accessToken = null)
+    public async Task StartTransmission(string myId, string targetId, int inputDevId, int outputDevId, string? accessToken = null)
     {
-        if (_isActive) _ = StopTransmission();
+        if (_isActive) await StopTransmission();
 
         _myId = myId;
         _targetId = targetId;
@@ -67,7 +74,7 @@ public class VoiceService : IVoiceService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"gRPC Start Error: {ex.Message}");
+            _logger.LogError(ex, "gRPC音声通信の開始に失敗");
         }
     }
 
@@ -91,7 +98,10 @@ public class VoiceService : IVoiceService
             _waveOut.Init(_waveProvider!);
             _waveOut.Play();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "音声出力デバイス初期化失敗 (deviceId={DeviceId})", deviceId);
+        }
     }
 
     private async void OnAudioCaptured(object sender, WaveInEventArgs e)
@@ -115,7 +125,11 @@ public class VoiceService : IVoiceService
                 AudioContent = Google.Protobuf.ByteString.CopyFrom(encoded)
             });
         }
-        catch { }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "音声データ送信エラー");
+        }
     }
 
     private async Task ReceiveLoop()
@@ -145,7 +159,7 @@ public class VoiceService : IVoiceService
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled) { }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"gRPC Recv Error: {ex.Message}");
+            _logger.LogWarning(ex, "gRPC音声受信エラー");
         }
     }
 
@@ -172,9 +186,14 @@ public class VoiceService : IVoiceService
             _waveOut?.Stop();
             _waveOut?.Dispose();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "音声通信クリーンアップエラー");
+        }
     }
 
+    // 注意: UI スレッドから呼ばれるとデッドロックリスクあり。
+    // 可能な限り StopTransmission() を await して使うこと。
     public void Dispose()
     {
         StopTransmission().GetAwaiter().GetResult();

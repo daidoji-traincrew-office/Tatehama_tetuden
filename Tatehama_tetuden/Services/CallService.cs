@@ -1,17 +1,18 @@
-using Tatehama_tetuden;
+using Microsoft.Extensions.Logging;
 using Tatehama_tetuden.Contracts;
+using Tatehama_tetuden.Helpers;
 using Tatehama_tetuden.Models;
-using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Services
 {
     public class CallService : IDisposable, IAsyncDisposable
     {
         // --- 依存（インターフェース） ---
+        private readonly ILogger<CallService> _logger;
         private readonly ISignalingService   _signaling;
         private readonly IVoiceService       _voice;
         private readonly ISoundService       _sound;
-        private readonly PhoneBookRepository _phoneBookRepo;
+        private readonly IPhoneBookRepository _phoneBookRepo;
         private readonly IAuthenticationService _auth;
 
         // --- オーディオデバイス ---
@@ -44,9 +45,13 @@ namespace Tatehama_tetuden.Services
         public event Action<string, string>?   IncomingCallReceived;  // (name, number)
         public event Action?                   CallEnded;
 
+        // --- スレッド安全性 ---
+        private readonly SemaphoreSlim _stateLock = new(1, 1);
+
         /// <summary>コンストラクタインジェクション。テストでモックを渡す。</summary>
-        public CallService(ISignalingService signaling, IVoiceService voice, ISoundService sound, PhoneBookRepository phoneBookRepo, IAuthenticationService auth)
+        public CallService(ILogger<CallService> logger, ISignalingService signaling, IVoiceService voice, ISoundService sound, IPhoneBookRepository phoneBookRepo, IAuthenticationService auth)
         {
+            _logger        = logger;
             _signaling     = signaling;
             _voice         = voice;
             _sound         = sound;
@@ -98,26 +103,26 @@ namespace Tatehama_tetuden.Services
         private void SetupSignalREvents()
         {
             _signaling.LoginSuccess         += (id)               => { _myConnectionId = id; };
-            _signaling.IncomingCallReceived += (number, callerId) => _ = HandleIncomingCall(number, callerId);
+            _signaling.IncomingCallReceived += (number, callerId) => HandleIncomingCall(number, callerId).FireAndForget(_logger, "HandleIncomingCall");
             _signaling.AnswerReceived       += (responderId)      => HandleAnswered(responderId);
             _signaling.HangupReceived       += (fromId)           =>
             {
                 if (string.IsNullOrEmpty(fromId) || fromId == _targetConnectionId)
-                    _ = EndCallInternal(sendSignal: false, playSound: true);
+                    EndCallInternal(sendSignal: false, playSound: true).FireAndForget(_logger, "HandleHangup");
             };
             _signaling.CancelReceived       += (fromId)           =>
             {
                 if (CurrentStatus == PhoneStatus.Incoming && fromId == _targetConnectionId)
-                    _ = EndCallInternal(sendSignal: false, playSound: false);
+                    EndCallInternal(sendSignal: false, playSound: false).FireAndForget(_logger, "HandleCancel");
             };
-            _signaling.RejectReceived       += (fromId)           => { _ = HandleRejected(); };
-            _signaling.BusyReceived         += ()                 => { _ = HandleBusySignal(); };
+            _signaling.RejectReceived       += (fromId)           => HandleRejected().FireAndForget(_logger, "HandleRejected");
+            _signaling.BusyReceived         += ()                 => HandleBusySignal().FireAndForget(_logger, "HandleBusySignal");
             _signaling.HoldReceived         += ()                 => HandleRemoteHold(true);
             _signaling.ResumeReceived       += ()                 => HandleRemoteHold(false);
             _signaling.ConnectionLost       += ()                 => { IsOnline = false; OnlineStateChanged?.Invoke(false); };
             _signaling.Reconnected          += ()                 =>
             {
-                _ = _signaling.SendLogin(CurrentStation!.Number);
+                _signaling.SendLogin(CurrentStation!.Number).FireAndForget(_logger, "Reconnect SendLogin");
                 IsOnline = true;
                 OnlineStateChanged?.Invoke(true);
             };
@@ -181,7 +186,7 @@ namespace Tatehama_tetuden.Services
             _sound.Stop();
             _sound.Play(SoundName.Tori);
             await _signaling.SendAnswer(_connectedTargetNumber!, _targetConnectionId!);
-            StartVoiceTransmission(_targetConnectionId!);
+            await StartVoiceTransmission(_targetConnectionId!);
 
             CurrentStatus  = PhoneStatus.Talking;
             CallStartTime  = DateTime.Now;
@@ -232,63 +237,114 @@ namespace Tatehama_tetuden.Services
 
         private async Task HandleIncomingCall(string fromNumber, string callerId)
         {
-            if (CurrentStatus != PhoneStatus.Idle)
+            await _stateLock.WaitAsync();
+            try
             {
-                await _signaling.SendBusy(callerId);
-                return;
+                if (CurrentStatus != PhoneStatus.Idle)
+                {
+                    await _signaling.SendBusy(callerId);
+                    return;
+                }
+
+                _connectedTargetNumber = fromNumber;
+                _targetConnectionId    = callerId;
+                ConnectedTargetName    = _phoneBookRepo.FindByNumber(fromNumber)?.Name ?? "不明";
+
+                CurrentStatus = PhoneStatus.Incoming;
+                StatusChanged?.Invoke(CurrentStatus);
+
+                _sound.Play(SoundName.Yobi1, loop: true, loopIntervalMs: 1000);
+                IncomingCallReceived?.Invoke(ConnectedTargetName!, fromNumber);
             }
-
-            _connectedTargetNumber = fromNumber;
-            _targetConnectionId    = callerId;
-            ConnectedTargetName    = _phoneBookRepo.FindByNumber(fromNumber)?.Name ?? "不明";
-
-            CurrentStatus = PhoneStatus.Incoming;
-            StatusChanged?.Invoke(CurrentStatus);
-
-            _sound.Play(SoundName.Yobi1, loop: true, loopIntervalMs: 1000);
-            IncomingCallReceived?.Invoke(ConnectedTargetName!, fromNumber);
+            finally
+            {
+                _stateLock.Release();
+            }
         }
 
-        private void HandleAnswered(string responderId)
+        private async void HandleAnswered(string responderId)
         {
-            if (CurrentStatus != PhoneStatus.Outgoing) return;
+            try
+            {
+                if (CurrentStatus != PhoneStatus.Outgoing) return;
 
-            _sound.Stop();
-            _targetConnectionId = responderId;
-            StartVoiceTransmission(_targetConnectionId);
+                _sound.Stop();
+                _targetConnectionId = responderId;
+                await StartVoiceTransmission(_targetConnectionId);
 
-            CurrentStatus  = PhoneStatus.Talking;
-            CallStartTime  = DateTime.Now;
-            IsMuted        = false;
-            IsSpeakerOn    = false;
-            IsMyHold       = false;
-            _isRemoteHold  = false;
-            IsHolding      = false;
-            StatusChanged?.Invoke(CurrentStatus);
+                CurrentStatus  = PhoneStatus.Talking;
+                CallStartTime  = DateTime.Now;
+                IsMuted        = false;
+                IsSpeakerOn    = false;
+                IsMyHold       = false;
+                _isRemoteHold  = false;
+                IsHolding      = false;
+                StatusChanged?.Invoke(CurrentStatus);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "応答処理中にエラー");
+            }
         }
 
         private async Task HandleBusySignal()
         {
-            if (CurrentStatus != PhoneStatus.Outgoing) return;
-            ConnectedTargetName = "話中";
-            _sound.Play(SoundName.Watyu);
-            StatusChanged?.Invoke(CurrentStatus);
+            await _stateLock.WaitAsync();
+            try
+            {
+                if (CurrentStatus != PhoneStatus.Outgoing) return;
+                ConnectedTargetName = "話中";
+                _sound.Play(SoundName.Watyu);
+                StatusChanged?.Invoke(CurrentStatus);
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+
             await Task.Delay(5000);
-            if (CurrentStatus == PhoneStatus.Outgoing)
-                await EndCallInternal(sendSignal: false, playSound: false);
+
+            await _stateLock.WaitAsync();
+            try
+            {
+                if (CurrentStatus == PhoneStatus.Outgoing)
+                    await EndCallInternal(sendSignal: false, playSound: false);
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
         }
 
         private async Task HandleRejected()
         {
-            if (CurrentStatus != PhoneStatus.Outgoing) return;
-            ConnectedTargetName = "事情によりお繋ぎできません";
-            _sound.Stop();
-            _sound.SetOutputDevice(_normalOutputDevice?.ID);
-            _sound.Play(SoundName.Watyu);
-            StatusChanged?.Invoke(CurrentStatus);
+            await _stateLock.WaitAsync();
+            try
+            {
+                if (CurrentStatus != PhoneStatus.Outgoing) return;
+                ConnectedTargetName = "事情によりお繋ぎできません";
+                _sound.Stop();
+                _sound.SetOutputDevice(_normalOutputDevice?.ID);
+                _sound.Play(SoundName.Watyu);
+                StatusChanged?.Invoke(CurrentStatus);
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+
             await Task.Delay(5000);
-            if (CurrentStatus == PhoneStatus.Outgoing)
-                await EndCallInternal(sendSignal: false, playSound: false);
+
+            await _stateLock.WaitAsync();
+            try
+            {
+                if (CurrentStatus == PhoneStatus.Outgoing)
+                    await EndCallInternal(sendSignal: false, playSound: false);
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
         }
 
         private void HandleRemoteHold(bool isHold)
@@ -316,7 +372,7 @@ namespace Tatehama_tetuden.Services
             StatusChanged?.Invoke(CurrentStatus);
         }
 
-        private void StartVoiceTransmission(string targetId)
+        private async Task StartVoiceTransmission(string targetId)
         {
             // トークンを取得
             string? token = _auth.GetAccessToken();
@@ -324,7 +380,7 @@ namespace Tatehama_tetuden.Services
             int inDev = -1, outDevId = -1;
             if (_currentInputDevice != null)  int.TryParse(_currentInputDevice.ID,  out inDev);
             if (_normalOutputDevice != null)  int.TryParse(_normalOutputDevice.ID,  out outDevId);
-            _voice.StartTransmission(_myConnectionId ?? "", targetId, inDev, outDevId, token);
+            await _voice.StartTransmission(_myConnectionId ?? "", targetId, inDev, outDevId, token);
         }
 
         private async Task EndCallInternal(bool sendSignal, bool playSound)
@@ -364,6 +420,8 @@ namespace Tatehama_tetuden.Services
             CallEnded?.Invoke();
         }
 
+        // 注意: UI スレッドから呼ばれるとデッドロックリスクあり。
+        // 可能な限り DisposeAsync() を使うこと。
         public void Dispose()
         {
             DisposeAsync().GetAwaiter().GetResult();

@@ -1,25 +1,39 @@
+using Microsoft.Extensions.Logging;
 using Moq;
-using RailwayPhone;
+using Tatehama_tetuden.Contracts;
+using Tatehama_tetuden.Models;
+using Tatehama_tetuden.Repositories;
+using Tatehama_tetuden.Services;
 using Xunit;
 
-namespace RailwayPhone.Tests;
+namespace Tatehama_tetuden.Tests;
 
 public class CallServiceTests
 {
+    private readonly Mock<ILogger<CallService>> _mockLogger;
     private readonly Mock<ISignalingService>   _mockSignaling;
     private readonly Mock<IVoiceService>       _mockVoice;
     private readonly Mock<ISoundService>       _mockSound;
-    private readonly PhoneBookRepository       _phoneBookRepo;
+    private readonly Mock<IAuthenticationService> _mockAuth;
+    private readonly IPhoneBookRepository      _phoneBookRepo;
     private readonly CallService               _sut;
 
     public CallServiceTests()
     {
+        _mockLogger     = new Mock<ILogger<CallService>>();
         _mockSignaling  = new Mock<ISignalingService>();
         _mockVoice      = new Mock<IVoiceService>();
         _mockSound      = new Mock<ISoundService>();
+        _mockAuth       = new Mock<IAuthenticationService>();
         _phoneBookRepo  = new PhoneBookRepository();
 
-        _sut = new CallService(_mockSignaling.Object, _mockVoice.Object, _mockSound.Object, _phoneBookRepo);
+        _sut = new CallService(
+            _mockLogger.Object,
+            _mockSignaling.Object,
+            _mockVoice.Object,
+            _mockSound.Object,
+            _phoneBookRepo,
+            _mockAuth.Object);
 
         var station = new PhoneBookEntry { Name = "館浜駅 信号扱所", Number = "201", Category = "信号" };
         _sut.Initialize(station, null, null, null);
@@ -86,9 +100,9 @@ public class CallServiceTests
     }
 
     [Fact]
-    public void 着信_通話中の場合_Busyが返される()
+    public async Task 着信_通話中の場合_Busyが返される()
     {
-        SetupTalkingState();
+        await SetupTalkingState();
 
         SimulateIncomingCall("102", "caller-xyz");
 
@@ -99,29 +113,29 @@ public class CallServiceTests
     // ─── 受話 ────────────────────────────────────────────────
 
     [Fact]
-    public void AnswerCall_着信中_Talkingに遷移し_音声開始される()
+    public async Task AnswerCall_着信中_Talkingに遷移し_音声開始される()
     {
         SimulateIncomingCall("101", "caller-abc");
         var statusEvents = CaptureStatusEvents();
 
-        _sut.AnswerCall();
+        await _sut.AnswerCall();
 
         Assert.Contains(PhoneStatus.Talking, statusEvents);
         _mockVoice.Verify(v => v.StartTransmission(
             It.IsAny<string>(), "caller-abc",
-            It.IsAny<string>(), It.IsAny<int>(),
-            It.IsAny<int>(), It.IsAny<int>()), Times.Once);
+            It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<string?>()), Times.Once);
     }
 
     // ─── 切断 ────────────────────────────────────────────────
 
     [Fact]
-    public void EndCall_通話中_Hangupが送られ_Idleに戻る()
+    public async Task EndCall_通話中_Hangupが送られ_Idleに戻る()
     {
-        SetupTalkingState();
+        await SetupTalkingState();
         var statusEvents = CaptureStatusEvents();
 
-        _sut.EndCall();
+        await _sut.EndCall();
 
         Assert.Contains(PhoneStatus.Idle, statusEvents);
         _mockSignaling.Verify(s => s.SendHangup(It.IsAny<string>()), Times.Once);
@@ -129,11 +143,11 @@ public class CallServiceTests
     }
 
     [Fact]
-    public void EndCall_着信中_Rejectが送られる()
+    public async Task EndCall_着信中_Rejectが送られる()
     {
         SimulateIncomingCall("101", "caller-abc");
 
-        _sut.EndCall();
+        await _sut.EndCall();
 
         _mockSignaling.Verify(s => s.SendReject("caller-abc"), Times.Once);
     }
@@ -161,11 +175,11 @@ public class CallServiceTests
     }
 
     [Fact]
-    public void ToggleHold_自己保留_Holdが送られる()
+    public async Task ToggleHold_自己保留_Holdが送られる()
     {
-        SetupTalkingState();
+        await SetupTalkingState();
 
-        _sut.ToggleHold();
+        await _sut.ToggleHold();
 
         Assert.True(_sut.IsMyHold);
         Assert.True(_sut.IsHolding);
@@ -174,12 +188,12 @@ public class CallServiceTests
     }
 
     [Fact]
-    public void ToggleHold_保留中_Resumeが送られ_通話に戻る()
+    public async Task ToggleHold_保留中_Resumeが送られ_通話に戻る()
     {
-        SetupTalkingState();
-        _sut.ToggleHold(); // → 自己保留
+        await SetupTalkingState();
+        await _sut.ToggleHold(); // → 自己保留
 
-        _sut.ToggleHold(); // → 再開
+        await _sut.ToggleHold(); // → 再開
 
         Assert.False(_sut.IsMyHold);
         Assert.False(_sut.IsHolding);
@@ -225,10 +239,10 @@ public class CallServiceTests
     }
 
     /// <summary>通話中状態にセットする</summary>
-    private void SetupTalkingState()
+    private async Task SetupTalkingState()
     {
         _mockSignaling.SetupGet(s => s.IsConnected).Returns(true);
         SimulateIncomingCall("101", "caller-abc");
-        _sut.AnswerCall();
+        await _sut.AnswerCall();
     }
 }

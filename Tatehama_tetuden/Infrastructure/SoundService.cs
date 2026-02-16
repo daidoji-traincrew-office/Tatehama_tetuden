@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using Tatehama_tetuden.Contracts;
 
@@ -6,9 +7,15 @@ namespace Tatehama_tetuden.Infrastructure;
 
 public class SoundService : ISoundService
 {
+    private readonly ILogger<SoundService> _logger;
     private IWavePlayer? _outputDevice;
     private AudioFileReader? _audioFile;
     private int _currentDeviceId = -1;
+
+    public SoundService(ILogger<SoundService> logger)
+    {
+        _logger = logger;
+    }
 
     public void SetOutputDevice(string? deviceIdStr)
     {
@@ -45,7 +52,7 @@ public class SoundService : ISoundService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Sound Error: {ex.Message}");
+            _logger.LogWarning(ex, "効果音再生エラー (soundName={SoundName})", soundName);
         }
     }
 
@@ -66,7 +73,7 @@ public class SoundService : ISoundService
 
     private class LoopStream : WaveStream
     {
-        private WaveStream sourceStream;
+        private readonly WaveStream sourceStream;
 
         public LoopStream(WaveStream sourceStream)
         {
@@ -98,11 +105,17 @@ public class SoundService : ISoundService
             }
             return totalBytesRead;
         }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) sourceStream.Dispose();
+            base.Dispose(disposing);
+        }
     }
 
     private class IntervalLoopStream : WaveStream
     {
-        private WaveStream sourceStream;
+        private readonly WaveStream sourceStream;
         private int silenceBytesTotal;
         private int silenceBytesWritten;
         private bool inSilenceMode = false;
@@ -163,6 +176,12 @@ public class SoundService : ISoundService
                 }
             }
             return bytesWritten;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) sourceStream.Dispose();
+            base.Dispose(disposing);
         }
     }
 }

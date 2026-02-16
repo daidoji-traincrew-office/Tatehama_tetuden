@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenIddict.Client;
 using Tatehama_tetuden.Contracts;
+using Tatehama_tetuden.Helpers;
 using Tatehama_tetuden.Infrastructure;
 using Tatehama_tetuden.Repositories;
 using Tatehama_tetuden.Services;
@@ -67,6 +68,7 @@ namespace Tatehama_tetuden
 
                         // リポジトリの登録
                         services.AddSingleton<PhoneBookRepository>();
+                        services.AddSingleton<IPhoneBookRepository>(sp => sp.GetRequiredService<PhoneBookRepository>());
                         services.AddSingleton<AudioDeviceRepository>();
 
                         // サービスの登録
@@ -100,15 +102,26 @@ namespace Tatehama_tetuden
             {
                 // 1. MainWindow を先に表示
                 var mainWindow = _host!.Services.GetRequiredService<MainWindow>();
+                mainWindow.LoginRequested = TryAuthenticationFlowAsync;
                 ShutdownMode = ShutdownMode.OnMainWindowClose;
                 mainWindow.Show();
 
+                // AuthenticationFailed イベントをサブスクライブして UI でエラー表示
+                var authService = _host.Services.GetRequiredService<IAuthenticationService>();
+                authService.AuthenticationFailed += (message) =>
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        MessageBox.Show(message, "認証エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    });
+                };
+
                 // 2. バックグラウンドで認証を試みる
-                _ = Task.Run(async () =>
+                Task.Run(async () =>
                 {
                     await Task.Delay(500); // UI の初期化を待つ
                     await TryAuthenticationFlowAsync();
-                });
+                }).FireAndForget(context: "初期認証フロー");
             }
             catch (Exception ex)
             {
@@ -124,7 +137,6 @@ namespace Tatehama_tetuden
             try
             {
                 var authService = _host!.Services.GetRequiredService<IAuthenticationService>();
-                var phoneBookRepo = _host.Services.GetRequiredService<PhoneBookRepository>();
 
                 // 認証処理を実行
                 bool authSuccess = await authService.AuthorizeAsync();
@@ -138,7 +150,7 @@ namespace Tatehama_tetuden
                 // 認証成功後、駅選択画面を表示（UI スレッドで）
                 await Dispatcher.InvokeAsync(async () =>
                 {
-                    var allowedStations = await authService.GetAllowedStationsAsync(phoneBookRepo);
+                    var allowedStations = await authService.GetAllowedStationsAsync();
 
                     if (allowedStations.Count == 0)
                     {

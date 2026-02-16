@@ -1,8 +1,9 @@
+using Tatehama_tetuden.Contracts;
 using Tatehama_tetuden.Models;
 
 namespace Tatehama_tetuden.Repositories
 {
-    public class PhoneBookRepository
+    public class PhoneBookRepository : IPhoneBookRepository
     {
         private static readonly List<PhoneBookEntry> _entries = new List<PhoneBookEntry>
         {

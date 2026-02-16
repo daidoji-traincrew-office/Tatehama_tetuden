@@ -1,11 +1,9 @@
-using System.Diagnostics;
 using System.IdentityModel.Tokens.Jwt;
-using System.Windows;
+using Microsoft.Extensions.Logging;
 using OpenIddict.Abstractions;
 using OpenIddict.Client;
 using Tatehama_tetuden.Contracts;
 using Tatehama_tetuden.Models;
-using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Services
 {
@@ -15,7 +13,9 @@ namespace Tatehama_tetuden.Services
     public class AuthenticationService : IAuthenticationService
     {
         private readonly TimeSpan _renewMargin = TimeSpan.FromMinutes(1);
+        private readonly ILogger<AuthenticationService> _logger;
         private readonly OpenIddictClientService _openIddictClientService;
+        private readonly IPhoneBookRepository _phoneBookRepo;
 
         private string _token = "";
         private string _refreshToken = "";
@@ -28,9 +28,11 @@ namespace Tatehama_tetuden.Services
         public event Action? AuthenticationCompleted;
         public event Action<string>? AuthenticationFailed;
 
-        public AuthenticationService(OpenIddictClientService openIddictClientService)
+        public AuthenticationService(ILogger<AuthenticationService> logger, OpenIddictClientService openIddictClientService, IPhoneBookRepository phoneBookRepo)
         {
+            _logger = logger;
             _openIddictClientService = openIddictClientService;
+            _phoneBookRepo = phoneBookRepo;
         }
 
         /// <summary>
@@ -64,37 +66,31 @@ namespace Tatehama_tetuden.Services
                 _tokenExpiration = resultAuth.BackchannelAccessTokenExpirationDate ?? DateTimeOffset.MinValue;
                 _refreshToken = resultAuth.RefreshToken ?? "";
 
-                Debug.WriteLine("Authentication successful");
+                _logger.LogInformation("認証成功");
                 AuthenticationCompleted?.Invoke();
                 return true;
             }
             catch (OpenIddictExceptions.ProtocolException exception)
                 when (exception.Error == OpenIddictConstants.Errors.AccessDenied)
             {
-                // ログインしたユーザーがサーバーにいないか、ロールがついていない
                 string message = "認証が拒否されました。\n司令主任に連絡してください。";
-                Debug.WriteLine($"Authentication failed: {message}");
+                _logger.LogWarning(exception, "認証拒否: {Message}", message);
                 AuthenticationFailed?.Invoke(message);
-                MessageBox.Show(message, "認証拒否", MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
             catch (OpenIddictExceptions.ProtocolException exception)
                 when (exception.Error == OpenIddictConstants.Errors.ServerError)
             {
-                // サーバーでトラブル発生
                 string message = "認証時にサーバーでエラーが発生しました。";
-                Debug.WriteLine($"Authentication failed: {message}");
+                _logger.LogError(exception, "サーバーエラー: {Message}", message);
                 AuthenticationFailed?.Invoke(message);
-                MessageBox.Show(message, "サーバーエラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
             catch (Exception exception)
             {
-                // その他別な理由で認証失敗
                 string message = $"認証に失敗しました: {exception.Message}";
-                Debug.WriteLine($"Authentication failed: {message}");
+                _logger.LogError(exception, "認証失敗: {Message}", message);
                 AuthenticationFailed?.Invoke(message);
-                MessageBox.Show(message, "認証失敗", MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }
@@ -106,7 +102,7 @@ namespace Tatehama_tetuden.Services
         {
             if (string.IsNullOrEmpty(_refreshToken))
             {
-                Debug.WriteLine("Refresh token is not set.");
+                _logger.LogDebug("リフレッシュトークン未設定");
                 return false;
             }
 
@@ -122,7 +118,7 @@ namespace Tatehama_tetuden.Services
                 _tokenExpiration = result.AccessTokenExpirationDate ?? DateTimeOffset.MinValue;
                 _refreshToken = result.RefreshToken ?? "";
 
-                Debug.WriteLine("Token refreshed successfully");
+                _logger.LogInformation("トークン更新成功");
                 return true;
             }
             catch (OpenIddictExceptions.ProtocolException ex)
@@ -130,12 +126,12 @@ namespace Tatehama_tetuden.Services
                                   or OpenIddictConstants.Errors.InvalidGrant
                                   or OpenIddictConstants.Errors.ExpiredToken)
             {
-                Debug.WriteLine($"Refresh token is invalid or expired: {ex.Message}");
+                _logger.LogWarning(ex, "リフレッシュトークンが無効または期限切れ");
                 return false;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error during token refresh: {ex.Message}");
+                _logger.LogError(ex, "トークン更新中にエラー");
                 return false;
             }
         }
@@ -159,11 +155,11 @@ namespace Tatehama_tetuden.Services
         /// <summary>
         /// 認証後、ユーザーに許可された駅のリストを取得
         /// </summary>
-        public async Task<List<PhoneBookEntry>> GetAllowedStationsAsync(PhoneBookRepository phoneBookRepo)
+        public async Task<List<PhoneBookEntry>> GetAllowedStationsAsync()
         {
             if (ServerAddress.IsDebug)
             {
-                return phoneBookRepo.GetAll();
+                return _phoneBookRepo.GetAll();
             }
 
             // JWT トークンからクレームを読み取る
@@ -171,12 +167,14 @@ namespace Tatehama_tetuden.Services
 
             if (string.IsNullOrEmpty(_token))
             {
-                Debug.WriteLine("No token available");
+                _logger.LogWarning("トークン未取得");
                 return new List<PhoneBookEntry>();
             }
 
             try
             {
+                // 署名検証は行わない（意図的）。クライアント側でのJWT読み取りは
+                // UIフィルタリング用途のみであり、サーバー側で権限検証を行う。
                 var jwtToken = handler.ReadJwtToken(_token);
 
                 // "role" クレームから許可された駅番号を取得
@@ -186,7 +184,7 @@ namespace Tatehama_tetuden.Services
                     .Select(c => c.Value)
                     .ToList();
 
-                Debug.WriteLine($"User roles: {string.Join(", ", roleClaims)}");
+                _logger.LogDebug("ユーザーロール: {Roles}", string.Join(", ", roleClaims));
 
                 // "Station:XXX" のパターンから駅番号を抽出
                 var allowedStationNumbers = roleClaims
@@ -195,7 +193,7 @@ namespace Tatehama_tetuden.Services
                     .ToList();
 
                 // すべての駅を取得
-                var allStations = await phoneBookRepo.GetAllStationsAsync();
+                var allStations = await _phoneBookRepo.GetAllStationsAsync();
 
                 // 許可された駅番号でフィルタリング
                 if (allowedStationNumbers.Count > 0)
@@ -204,22 +202,22 @@ namespace Tatehama_tetuden.Services
                         .Where(s => allowedStationNumbers.Contains(s.Number))
                         .ToList();
 
-                    Debug.WriteLine($"Allowed stations: {string.Join(", ", allowedStations.Select(s => s.Name))}");
+                    _logger.LogDebug("許可駅: {Stations}", string.Join(", ", allowedStations.Select(s => s.Name)));
                     return allowedStations;
                 }
                 else
                 {
                     // ロールに駅が指定されていない場合、すべての駅を返す
                     // （または管理者権限を持つ可能性がある）
-                    Debug.WriteLine("No station restrictions found, allowing all stations");
+                    _logger.LogDebug("駅制限なし、全駅を許可");
                     return allStations;
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error parsing JWT token: {ex.Message}");
+                _logger.LogWarning(ex, "JWTトークン解析エラー");
                 // エラーの場合は全駅を返す（フェイルセーフ）
-                return await phoneBookRepo.GetAllStationsAsync();
+                return await _phoneBookRepo.GetAllStationsAsync();
             }
         }
     }

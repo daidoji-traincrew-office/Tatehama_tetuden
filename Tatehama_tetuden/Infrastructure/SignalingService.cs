@@ -1,11 +1,13 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Logging;
 using Tatehama_tetuden.Contracts;
 
 namespace Tatehama_tetuden.Infrastructure;
 
 public class SignalingService : ISignalingService
 {
+    private readonly ILogger<SignalingService> _logger;
     private HubConnection? _hubConnection;
     private bool _isManuallyDisconnecting = false;
 
@@ -22,6 +24,11 @@ public class SignalingService : ISignalingService
     public event Action?                 Reconnecting;
     public event Action?                 Reconnected;
 
+    public SignalingService(ILogger<SignalingService> logger)
+    {
+        _logger = logger;
+    }
+
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
     public async Task<bool> ConnectAsync(string? accessToken = null)
@@ -31,16 +38,17 @@ public class SignalingService : ISignalingService
         {
             var url = $"{ServerAddress.SignalAddress}/phoneHub";
 
-            // トークンをクエリ文字列に追加
-            if (!string.IsNullOrEmpty(accessToken))
-            {
-                url += $"?access_token={accessToken}";
-            }
-
             if (_hubConnection != null) await _hubConnection.DisposeAsync();
 
             _hubConnection = new HubConnectionBuilder()
-                .WithUrl(url)
+                .WithUrl(url, options =>
+                {
+                    // トークンを Authorization ヘッダーで送信（クエリ文字列に載せない）
+                    if (!string.IsNullOrEmpty(accessToken))
+                    {
+                        options.AccessTokenProvider = () => Task.FromResult<string?>(accessToken);
+                    }
+                })
                 .WithAutomaticReconnect()
                 .Build();
 
@@ -53,7 +61,7 @@ public class SignalingService : ISignalingService
             await _hubConnection.StartAsync();
             return true;
         }
-        catch { _ = RetryConnectionLoop(); return false; }
+        catch (Exception ex) { _logger.LogWarning(ex, "SignalR接続失敗、再接続を試行します"); _ = RetryConnectionLoop(); return false; }
     }
 
     private async Task RetryConnectionLoop()
@@ -61,7 +69,7 @@ public class SignalingService : ISignalingService
         while (!_isManuallyDisconnecting && (_hubConnection == null || _hubConnection.State == HubConnectionState.Disconnected))
         {
             Reconnecting?.Invoke();
-            try { await Task.Delay(5000); await _hubConnection!.StartAsync(); Reconnected?.Invoke(); return; } catch { }
+            try { await Task.Delay(5000); await _hubConnection!.StartAsync(); Reconnected?.Invoke(); return; } catch (Exception ex) { _logger.LogDebug(ex, "再接続試行失敗"); }
         }
     }
 
@@ -93,7 +101,8 @@ public class SignalingService : ISignalingService
                     }
                 }
             }
-            catch { }
+            catch (JsonException ex) { _logger.LogWarning(ex, "SignalRメッセージのJSON解析失敗"); }
+            catch (Exception ex) { _logger.LogError(ex, "SignalRメッセージ処理中にエラー発生"); }
         });
     }
 
@@ -106,6 +115,8 @@ public class SignalingService : ISignalingService
     public async Task SendHold(string targetId)     { if (IsConnected) await _hubConnection!.InvokeAsync("Hold", targetId); }
     public async Task SendResume(string targetId)   { if (IsConnected) await _hubConnection!.InvokeAsync("Resume", targetId); }
 
+    // 注意: UI スレッドから呼ばれるとデッドロックリスクあり。
+    // 可能な限り DisposeAsync() を使うこと。
     public void Dispose()
     {
         DisposeAsync().GetAwaiter().GetResult();

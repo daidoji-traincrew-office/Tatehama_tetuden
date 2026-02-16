@@ -1,5 +1,4 @@
 using Tatehama_tetuden.Models;
-using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Contracts
 {
@@ -29,9 +28,8 @@ namespace Tatehama_tetuden.Contracts
         /// <summary>
         /// 認証後、ユーザーに許可された駅のリストを取得
         /// </summary>
-        /// <param name="phoneBookRepo">電話帳リポジトリ</param>
         /// <returns>許可された駅のリスト</returns>
-        Task<List<PhoneBookEntry>> GetAllowedStationsAsync(PhoneBookRepository phoneBookRepo);
+        Task<List<PhoneBookEntry>> GetAllowedStationsAsync();
 
         /// <summary>
         /// トークンの有効期限

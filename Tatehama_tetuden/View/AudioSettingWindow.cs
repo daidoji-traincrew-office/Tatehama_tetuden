@@ -5,7 +5,6 @@ using System.Windows.Media.Effects;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using Tatehama_tetuden.Models;
-using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.View
 {
@@ -73,7 +72,7 @@ namespace Tatehama_tetuden.View
         /// <param name="currentOutput">現在の出力デバイス</param>
         /// <param name="inVol">現在の入力音量</param>
         /// <param name="outVol">現在の出力音量</param>
-        public AudioSettingWindow(DeviceInfo currentInput, DeviceInfo currentOutput, float inVol, float outVol)
+        public AudioSettingWindow(DeviceInfo currentInput, DeviceInfo currentOutput, float inVol, float outVol, List<DeviceInfo>? inputDevices = null, List<DeviceInfo>? outputDevices = null)
         {
             // --- ウィンドウの基本設定 ---
             Title = "音声設定";
@@ -94,7 +93,7 @@ namespace Tatehama_tetuden.View
             InitializeUi();
 
             // --- デバイス情報の読み込み ---
-            LoadDevices(currentInput, currentOutput);
+            LoadDevices(currentInput, currentOutput, inputDevices, outputDevices);
         }
 
         #region UI構築ロジック
@@ -355,15 +354,17 @@ namespace Tatehama_tetuden.View
         /// <summary>
         /// 利用可能なオーディオデバイスを読み込み、コンボボックスに設定します。
         /// </summary>
-        private void LoadDevices(DeviceInfo currentInput, DeviceInfo currentOutput)
+        private void LoadDevices(DeviceInfo currentInput, DeviceInfo currentOutput, List<DeviceInfo>? inputDevices, List<DeviceInfo>? outputDevices)
         {
             try
             {
-                var audioDeviceRepo = new AudioDeviceRepository();
+                // デバイスリストが渡されなかった場合はWASAPIで直接列挙
+                var inputs = inputDevices ?? EnumerateDevices(DataFlow.Capture);
+                var outputs = outputDevices ?? EnumerateDevices(DataFlow.Render);
 
                 // 入力デバイスの列挙
                 _inputCombo.Items.Clear();
-                foreach (var item in audioDeviceRepo.GetInputDevices())
+                foreach (var item in inputs)
                 {
                     _inputCombo.Items.Add(item);
                     if (currentInput != null && item.ID == currentInput.ID)
@@ -374,7 +375,7 @@ namespace Tatehama_tetuden.View
 
                 // 出力デバイスの列挙
                 _outputCombo.Items.Clear();
-                foreach (var item in audioDeviceRepo.GetOutputDevices())
+                foreach (var item in outputs)
                 {
                     _outputCombo.Items.Add(item);
                     if (currentOutput != null && item.ID == currentOutput.ID)
@@ -387,6 +388,17 @@ namespace Tatehama_tetuden.View
             {
                 MessageBox.Show($"デバイスの読み込みに失敗しました: {ex.Message}");
             }
+        }
+
+        private static List<DeviceInfo> EnumerateDevices(DataFlow dataFlow)
+        {
+            var devices = new List<DeviceInfo>();
+            var mm = new MMDeviceEnumerator();
+            foreach (var d in mm.EnumerateAudioEndPoints(dataFlow, DeviceState.Active))
+            {
+                devices.Add(new DeviceInfo { Name = d.FriendlyName, ID = d.ID });
+            }
+            return devices;
         }
 
         /// <summary>
@@ -469,7 +481,8 @@ namespace Tatehama_tetuden.View
                             if (IsLoaded && _meter != null) _meter.Value = maxVol * 100;
                         });
                     }
-                    catch { }
+                    catch (TaskCanceledException) { }
+                    catch (InvalidOperationException) { }
                 };
 
                 // --- スピーカー出力 (Render) 設定 ---
@@ -524,7 +537,10 @@ namespace Tatehama_tetuden.View
 
                 _buffer = null;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ループバックテスト停止エラー: {ex.Message}");
+            }
         }
 
         #endregion
