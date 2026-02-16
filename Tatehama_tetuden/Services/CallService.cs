@@ -104,7 +104,7 @@ namespace Tatehama_tetuden.Services
         {
             _signaling.LoginSuccess         += (id)               => { _myConnectionId = id; };
             _signaling.IncomingCallReceived += (number, callerId) => HandleIncomingCall(number, callerId).FireAndForget(_logger, "HandleIncomingCall");
-            _signaling.AnswerReceived       += (responderId)      => HandleAnswered(responderId);
+            _signaling.AnswerReceived       += (responderId)      => HandleAnswered(responderId).FireAndForget(_logger, "HandleAnswered");
             _signaling.HangupReceived       += (fromId)           =>
             {
                 if (string.IsNullOrEmpty(fromId) || fromId == _targetConnectionId)
@@ -262,29 +262,22 @@ namespace Tatehama_tetuden.Services
             }
         }
 
-        private async void HandleAnswered(string responderId)
+        private async Task HandleAnswered(string responderId)
         {
-            try
-            {
-                if (CurrentStatus != PhoneStatus.Outgoing) return;
+            if (CurrentStatus != PhoneStatus.Outgoing) return;
 
-                _sound.Stop();
-                _targetConnectionId = responderId;
-                await StartVoiceTransmission(_targetConnectionId);
+            _sound.Stop();
+            _targetConnectionId = responderId;
+            await StartVoiceTransmission(_targetConnectionId);
 
-                CurrentStatus  = PhoneStatus.Talking;
-                CallStartTime  = DateTime.Now;
-                IsMuted        = false;
-                IsSpeakerOn    = false;
-                IsMyHold       = false;
-                _isRemoteHold  = false;
-                IsHolding      = false;
-                StatusChanged?.Invoke(CurrentStatus);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "応答処理中にエラー");
-            }
+            CurrentStatus  = PhoneStatus.Talking;
+            CallStartTime  = DateTime.Now;
+            IsMuted        = false;
+            IsSpeakerOn    = false;
+            IsMyHold       = false;
+            _isRemoteHold  = false;
+            IsHolding      = false;
+            StatusChanged?.Invoke(CurrentStatus);
         }
 
         private async Task HandleBusySignal()

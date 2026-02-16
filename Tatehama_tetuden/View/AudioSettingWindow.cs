@@ -57,11 +57,11 @@ namespace Tatehama_tetuden.View
 
         #endregion
 
-        #region デザイン定数
+        #region デザイン定数（共通定義は DesignConstants を参照）
 
-        private readonly Brush _primaryColor = new SolidColorBrush(Color.FromRgb(0, 120, 215));
-        private readonly Brush _dangerColor = new SolidColorBrush(Color.FromRgb(232, 17, 35));
-        private readonly Brush _bgColor = new SolidColorBrush(Color.FromRgb(240, 244, 248));
+        private readonly Brush _primaryColor = DesignConstants.PrimaryColor;
+        private readonly Brush _dangerColor = DesignConstants.DangerColor;
+        private readonly Brush _bgColor = DesignConstants.BgColor;
 
         #endregion
 

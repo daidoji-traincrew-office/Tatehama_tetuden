@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
 using Tatehama_tetuden.Contracts;
+using Tatehama_tetuden.Helpers;
 
 namespace Tatehama_tetuden.Infrastructure;
 
@@ -61,7 +62,7 @@ public class SignalingService : ISignalingService
             await _hubConnection.StartAsync();
             return true;
         }
-        catch (Exception ex) { _logger.LogWarning(ex, "SignalR接続失敗、再接続を試行します"); _ = RetryConnectionLoop(); return false; }
+        catch (Exception ex) { _logger.LogWarning(ex, "SignalR接続失敗、再接続を試行します"); RetryConnectionLoop().FireAndForget(_logger, "RetryConnectionLoop"); return false; }
     }
 
     private async Task RetryConnectionLoop()

@@ -6,7 +6,7 @@ using NAudio.Codecs;
 using NAudio.Wave;
 using RailwayPhone.Protos;
 using Tatehama_tetuden.Contracts;
-using Tatehama_tetuden;
+using Tatehama_tetuden.Helpers;
 
 namespace Tatehama_tetuden.Infrastructure;
 
@@ -68,7 +68,7 @@ public class VoiceService : IVoiceService
             _call = _client.JoinSession(callOptions);
             _isActive = true;
 
-            _ = Task.Run(ReceiveLoop);
+            Task.Run(ReceiveLoop).FireAndForget(_logger, "ReceiveLoop");
 
             _waveIn!.StartRecording();
         }
