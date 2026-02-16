@@ -37,7 +37,7 @@ public class SignalingService : ISignalingService
         if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected) return true;
         try
         {
-            var url = $"{ServerAddress.SignalAddress}/phoneHub";
+            var url = $"{ServerAddress.SignalAddress}/hub/phone";
 
             if (_hubConnection != null) await _hubConnection.DisposeAsync();
 
