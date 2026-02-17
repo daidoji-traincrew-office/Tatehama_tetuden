@@ -5,14 +5,15 @@ using Microsoft.Extensions.Logging;
 using NAudio.Codecs;
 using NAudio.Wave;
 using RailwayPhone.Protos;
-using Tatehama_tetuden.Contracts;
 using Tatehama_tetuden.Helpers;
+using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
 
-public class VoiceService : IVoiceService
+public class VoiceRepository : IVoiceRepository
 {
-    private readonly ILogger<VoiceService> _logger;
+    private readonly ILogger<VoiceRepository> _logger;
+    private readonly IAuthenticationRepository _auth;
     private readonly WaveFormat _format = new WaveFormat(8000, 16, 1);
 
     private GrpcChannel? _channel;
@@ -27,16 +28,20 @@ public class VoiceService : IVoiceService
     private string? _targetId;
     private volatile bool _isActive = false;
 
-    public VoiceService(ILogger<VoiceService> logger)
+    public VoiceRepository(ILogger<VoiceRepository> logger, IAuthenticationRepository auth)
     {
         _logger = logger;
+        _auth = auth;
     }
 
     public bool IsMuted { get; set; } = false;
 
-    public async Task StartTransmission(string myId, string targetId, int inputDevId, int outputDevId, string? accessToken = null)
+    public async Task StartTransmission(string myId, string targetId, int inputDevId, int outputDevId)
     {
         if (_isActive) await StopTransmission();
+
+        // トークンを内部で取得
+        string? accessToken = _auth.GetAccessToken();
 
         _myId = myId;
         _targetId = targetId;
@@ -192,8 +197,6 @@ public class VoiceService : IVoiceService
         }
     }
 
-    // 注意: UI スレッドから呼ばれるとデッドロックリスクあり。
-    // 可能な限り StopTransmission() を await して使うこと。
     public void Dispose()
     {
         StopTransmission().GetAwaiter().GetResult();
