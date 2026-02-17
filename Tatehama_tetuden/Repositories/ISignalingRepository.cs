@@ -1,3 +1,5 @@
+using Tatehama_tetuden.Models;
+
 namespace Tatehama_tetuden.Repositories;
 
 public interface ISignalingRepository : IDisposable, IAsyncDisposable
@@ -6,24 +8,21 @@ public interface ISignalingRepository : IDisposable, IAsyncDisposable
 
     Task<bool> ConnectAsync();
     Task SendLogin(string myNumber);
-    Task SendCall(string targetNumber);
-    Task SendAnswer(string targetNumber, string callerId);
-    Task SendReject(string callerId);
-    Task SendHangup(string targetId);
-    Task SendBusy(string callerId);
-    Task SendHold(string targetId);
-    Task SendResume(string targetId);
+    Task<CallResponse> SendCall(string targetNumber);
+    Task<AnswerResponse> SendAnswer();
+    Task SendReject();
+    Task SendHangup();
+    Task SendHold();
+    Task SendResume();
 
-    event Action<string>         LoginSuccess;
-    event Action<string, string> IncomingCallReceived;
-    event Action<string>         AnswerReceived;
-    event Action<string>         HangupReceived;
-    event Action<string>         CancelReceived;
-    event Action<string>         RejectReceived;
-    event Action                 BusyReceived;
-    event Action                 HoldReceived;
-    event Action                 ResumeReceived;
-    event Action                 ConnectionLost;
-    event Action                 Reconnecting;
-    event Action                 Reconnected;
+    event Action<string>  IncomingCallReceived;
+    event Action<string>  AnswerReceived;
+    event Action          HangupReceived;
+    event Action          CancelReceived;
+    event Action          RejectReceived;
+    event Action          HoldReceived;
+    event Action          ResumeReceived;
+    event Action          ConnectionLost;
+    event Action          Reconnecting;
+    event Action          Reconnected;
 }

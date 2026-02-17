@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
+using Tatehama_tetuden.Models;
 using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
@@ -10,18 +11,16 @@ public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthentic
     private HubConnection? _hubConnection;
     private bool _isManuallyDisconnecting = false;
 
-    public event Action<string>?         LoginSuccess;
-    public event Action<string, string>? IncomingCallReceived;
-    public event Action<string>?         AnswerReceived;
-    public event Action<string>?         HangupReceived;
-    public event Action<string>?         CancelReceived;
-    public event Action<string>?         RejectReceived;
-    public event Action?                 BusyReceived;
-    public event Action?                 HoldReceived;
-    public event Action?                 ResumeReceived;
-    public event Action?                 ConnectionLost;
-    public event Action?                 Reconnecting;
-    public event Action?                 Reconnected;
+    public event Action<string>?  IncomingCallReceived;
+    public event Action<string>?  AnswerReceived;
+    public event Action?          HangupReceived;
+    public event Action?          CancelReceived;
+    public event Action?          RejectReceived;
+    public event Action?          HoldReceived;
+    public event Action?          ResumeReceived;
+    public event Action?          ConnectionLost;
+    public event Action?          Reconnecting;
+    public event Action?          Reconnected;
 
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
@@ -85,15 +84,9 @@ public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthentic
 
     private void RegisterHandlers()
     {
-        _hubConnection!.On<string>("ReceiveLoginSuccess", (myConnectionId) =>
+        _hubConnection!.On<string>("ReceiveIncoming", (fromNumber) =>
         {
-            try { LoginSuccess?.Invoke(myConnectionId); }
-            catch (Exception ex) { logger.LogError(ex, "ReceiveLoginSuccess処理中にエラー発生"); }
-        });
-
-        _hubConnection!.On<string, string>("ReceiveIncoming", (fromNumber, callerConnectionId) =>
-        {
-            try { IncomingCallReceived?.Invoke(fromNumber, callerConnectionId); }
+            try { IncomingCallReceived?.Invoke(fromNumber); }
             catch (Exception ex) { logger.LogError(ex, "ReceiveIncoming処理中にエラー発生"); }
         });
 
@@ -103,22 +96,16 @@ public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthentic
             catch (Exception ex) { logger.LogError(ex, "ReceiveAnswered処理中にエラー発生"); }
         });
 
-        _hubConnection!.On<string>("ReceiveCancel", (callerConnectionId) =>
+        _hubConnection!.On("ReceiveCancel", () =>
         {
-            try { CancelReceived?.Invoke(callerConnectionId); }
+            try { CancelReceived?.Invoke(); }
             catch (Exception ex) { logger.LogError(ex, "ReceiveCancel処理中にエラー発生"); }
         });
 
-        _hubConnection!.On<string>("ReceiveReject", (fromId) =>
+        _hubConnection!.On("ReceiveReject", () =>
         {
-            try { RejectReceived?.Invoke(fromId); }
+            try { RejectReceived?.Invoke(); }
             catch (Exception ex) { logger.LogError(ex, "ReceiveReject処理中にエラー発生"); }
-        });
-
-        _hubConnection!.On("ReceiveBusy", () =>
-        {
-            try { BusyReceived?.Invoke(); }
-            catch (Exception ex) { logger.LogError(ex, "ReceiveBusy処理中にエラー発生"); }
         });
 
         _hubConnection!.On("ReceiveHoldRequest", () =>
@@ -133,21 +120,28 @@ public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthentic
             catch (Exception ex) { logger.LogError(ex, "ReceiveResumeRequest処理中にエラー発生"); }
         });
 
-        _hubConnection!.On<string>("ReceiveHangup", (fromId) =>
+        _hubConnection!.On("ReceiveHangup", () =>
         {
-            try { HangupReceived?.Invoke(fromId); }
+            try { HangupReceived?.Invoke(); }
             catch (Exception ex) { logger.LogError(ex, "ReceiveHangup処理中にエラー発生"); }
         });
     }
 
     public async Task SendLogin(string myNumber)  { if (IsConnected) await _hubConnection!.InvokeAsync("Login", myNumber); }
-    public async Task SendCall(string targetNumber) { if (IsConnected) await _hubConnection!.InvokeAsync("Call", targetNumber); }
-    public async Task SendAnswer(string targetNumber, string callerId) { if (IsConnected) await _hubConnection!.InvokeAsync("Answer", callerId); }
-    public async Task SendReject(string callerId)   { if (IsConnected) await _hubConnection!.InvokeAsync("Reject", callerId); }
-    public async Task SendHangup(string targetId)   { if (IsConnected) await _hubConnection!.InvokeAsync("Hangup", targetId); }
-    public async Task SendBusy(string callerId)     { if (IsConnected) await _hubConnection!.InvokeAsync("Busy", callerId); }
-    public async Task SendHold(string targetId)     { if (IsConnected) await _hubConnection!.InvokeAsync("Hold", targetId); }
-    public async Task SendResume(string targetId)   { if (IsConnected) await _hubConnection!.InvokeAsync("Resume", targetId); }
+    public async Task<CallResponse> SendCall(string targetNumber)
+    {
+        if (IsConnected) return await _hubConnection!.InvokeAsync<CallResponse>("Call", targetNumber);
+        return new CallResponse(false);
+    }
+    public async Task<AnswerResponse> SendAnswer()
+    {
+        if (IsConnected) return await _hubConnection!.InvokeAsync<AnswerResponse>("Answer");
+        return new AnswerResponse("", "");
+    }
+    public async Task SendReject()  { if (IsConnected) await _hubConnection!.InvokeAsync("Reject"); }
+    public async Task SendHangup()  { if (IsConnected) await _hubConnection!.InvokeAsync("Hangup"); }
+    public async Task SendHold()    { if (IsConnected) await _hubConnection!.InvokeAsync("Hold"); }
+    public async Task SendResume()  { if (IsConnected) await _hubConnection!.InvokeAsync("Resume"); }
 
     public void Dispose()
     {

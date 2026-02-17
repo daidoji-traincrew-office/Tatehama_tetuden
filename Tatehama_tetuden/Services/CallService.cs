@@ -87,10 +87,9 @@ namespace Tatehama_tetuden.Services
 
         private void SetupSignalingEvents()
         {
-            _signaling.LoginSuccess         += (id)               => { _myConnectionId = id; };
-            _signaling.IncomingCallReceived += async (number, callerId) =>
+            _signaling.IncomingCallReceived += async (fromNumber) =>
             {
-                try { await HandleIncomingCall(number, callerId); }
+                try { await HandleIncomingCall(fromNumber); }
                 catch (Exception ex) { _logger.LogError(ex, "着信処理中にエラー"); }
             };
             _signaling.AnswerReceived       += async (responderId) =>
@@ -98,33 +97,24 @@ namespace Tatehama_tetuden.Services
                 try { await HandleAnswered(responderId); }
                 catch (Exception ex) { _logger.LogError(ex, "応答処理中にエラー"); }
             };
-            _signaling.HangupReceived       += async (fromId) =>
+            _signaling.HangupReceived       += async () =>
             {
-                try
-                {
-                    if (string.IsNullOrEmpty(fromId) || fromId == _targetConnectionId)
-                        await EndCallInternal(sendSignal: false, playSound: true);
-                }
+                try { await EndCallInternal(sendSignal: false, playSound: true); }
                 catch (Exception ex) { _logger.LogError(ex, "切断処理中にエラー"); }
             };
-            _signaling.CancelReceived       += async (fromId) =>
+            _signaling.CancelReceived       += async () =>
             {
                 try
                 {
-                    if (CurrentStatus == PhoneStatus.Incoming && fromId == _targetConnectionId)
+                    if (CurrentStatus == PhoneStatus.Incoming)
                         await EndCallInternal(sendSignal: false, playSound: false);
                 }
                 catch (Exception ex) { _logger.LogError(ex, "キャンセル処理中にエラー"); }
             };
-            _signaling.RejectReceived       += async (fromId) =>
+            _signaling.RejectReceived       += async () =>
             {
                 try { await HandleRejected(); }
                 catch (Exception ex) { _logger.LogError(ex, "拒否処理中にエラー"); }
-            };
-            _signaling.BusyReceived         += async () =>
-            {
-                try { await HandleBusySignal(); }
-                catch (Exception ex) { _logger.LogError(ex, "話中処理中にエラー"); }
             };
             _signaling.HoldReceived         += ()                 => HandleRemoteHold(true);
             _signaling.ResumeReceived       += ()                 => HandleRemoteHold(false);
@@ -186,7 +176,12 @@ namespace Tatehama_tetuden.Services
 
             if (CurrentStatus == PhoneStatus.Outgoing)
             {
-                await _signaling.SendCall(targetNumber);
+                var response = await _signaling.SendCall(targetNumber);
+                if (!response.IsConnected)
+                {
+                    await HandleBusySignal();
+                    return;
+                }
                 _sound.Play(SoundName.Yobidashi, loop: true, loopIntervalMs: 2000);
             }
         }
@@ -195,8 +190,10 @@ namespace Tatehama_tetuden.Services
         {
             _sound.Stop();
             _sound.Play(SoundName.Tori);
-            await _signaling.SendAnswer(_connectedTargetNumber!, _targetConnectionId!);
-            await StartVoiceTransmission(_targetConnectionId!);
+            var response = await _signaling.SendAnswer();
+            _myConnectionId = response.MyConnectionId;
+            _targetConnectionId = response.CallerConnectionId;
+            await StartVoiceTransmission(_targetConnectionId);
 
             CurrentStatus  = PhoneStatus.Talking;
             CallStartTime  = DateTime.Now;
@@ -233,31 +230,29 @@ namespace Tatehama_tetuden.Services
             IsMyHold = !IsMyHold;
             if (IsMyHold)
             {
-                await _signaling.SendHold(_targetConnectionId!);
+                await _signaling.SendHold();
                 StartHoldState(self: true);
             }
             else
             {
-                await _signaling.SendResume(_targetConnectionId!);
+                await _signaling.SendResume();
                 StopHoldState();
             }
         }
 
         // --- 内部ハンドラ ---
 
-        private async Task HandleIncomingCall(string fromNumber, string callerId)
+        private async Task HandleIncomingCall(string fromNumber)
         {
             await _stateLock.WaitAsync();
             try
             {
                 if (CurrentStatus != PhoneStatus.Idle)
                 {
-                    await _signaling.SendBusy(callerId);
                     return;
                 }
 
                 _connectedTargetNumber = fromNumber;
-                _targetConnectionId    = callerId;
                 ConnectedTargetName    = _phoneBookRepo.FindByNumber(fromNumber)?.Name ?? "不明";
 
                 CurrentStatus = PhoneStatus.Incoming;
@@ -385,12 +380,12 @@ namespace Tatehama_tetuden.Services
 
         private async Task EndCallInternal(bool sendSignal, bool playSound)
         {
-            if (sendSignal && !string.IsNullOrEmpty(_targetConnectionId))
+            if (sendSignal)
             {
                 if (CurrentStatus == PhoneStatus.Incoming)
-                    await _signaling.SendReject(_targetConnectionId);
+                    await _signaling.SendReject();
                 else
-                    await _signaling.SendHangup(_targetConnectionId);
+                    await _signaling.SendHangup();
             }
 
             await _voice.StopTransmission();
