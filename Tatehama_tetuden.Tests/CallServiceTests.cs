@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Moq;
-using Tatehama_tetuden.Contracts;
 using Tatehama_tetuden.Models;
 using Tatehama_tetuden.Repositories;
 using Tatehama_tetuden.Services;
@@ -11,20 +10,18 @@ namespace Tatehama_tetuden.Tests;
 public class CallServiceTests
 {
     private readonly Mock<ILogger<CallService>> _mockLogger;
-    private readonly Mock<ISignalingService>   _mockSignaling;
-    private readonly Mock<IVoiceService>       _mockVoice;
-    private readonly Mock<ISoundService>       _mockSound;
-    private readonly Mock<IAuthenticationService> _mockAuth;
+    private readonly Mock<ISignalingRepository>  _mockSignaling;
+    private readonly Mock<IVoiceRepository>      _mockVoice;
+    private readonly Mock<ISoundRepository>      _mockSound;
     private readonly IPhoneBookRepository      _phoneBookRepo;
     private readonly CallService               _sut;
 
     public CallServiceTests()
     {
         _mockLogger     = new Mock<ILogger<CallService>>();
-        _mockSignaling  = new Mock<ISignalingService>();
-        _mockVoice      = new Mock<IVoiceService>();
-        _mockSound      = new Mock<ISoundService>();
-        _mockAuth       = new Mock<IAuthenticationService>();
+        _mockSignaling  = new Mock<ISignalingRepository>();
+        _mockVoice      = new Mock<IVoiceRepository>();
+        _mockSound      = new Mock<ISoundRepository>();
         _phoneBookRepo  = new PhoneBookRepository();
 
         _sut = new CallService(
@@ -32,8 +29,7 @@ public class CallServiceTests
             _mockSignaling.Object,
             _mockVoice.Object,
             _mockSound.Object,
-            _phoneBookRepo,
-            _mockAuth.Object);
+            _phoneBookRepo);
 
         var station = new PhoneBookEntry { Name = "館浜駅 信号扱所", Number = "201", Category = "信号" };
         _sut.Initialize(station, null, null, null);
@@ -123,8 +119,7 @@ public class CallServiceTests
         Assert.Contains(PhoneStatus.Talking, statusEvents);
         _mockVoice.Verify(v => v.StartTransmission(
             It.IsAny<string>(), "caller-abc",
-            It.IsAny<int>(), It.IsAny<int>(),
-            It.IsAny<string?>()), Times.Once);
+            It.IsAny<int>(), It.IsAny<int>()), Times.Once);
     }
 
     // ─── 切断 ────────────────────────────────────────────────
