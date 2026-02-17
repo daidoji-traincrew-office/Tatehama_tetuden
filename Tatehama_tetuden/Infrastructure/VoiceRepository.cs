@@ -22,6 +22,8 @@ public class VoiceRepository(ILogger<VoiceRepository> logger, IAuthenticationRep
     private WaveOutEvent? _waveOut;
     private BufferedWaveProvider? _waveProvider;
 
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+
     private string? _myId;
     private string? _targetId;
     private volatile bool _isActive = false;
@@ -119,12 +121,20 @@ public class VoiceRepository(ILogger<VoiceRepository> logger, IAuthenticationRep
                 encoded[outIndex++] = MuLawEncoder.LinearToMuLawSample(sample);
             }
 
-            await _call.RequestStream.WriteAsync(new VoiceData
+            if (!await _writeLock.WaitAsync(0)) return; // 前の書き込みが完了していなければスキップ
+            try
             {
-                ClientId = _myId!,
-                TargetId = _targetId!,
-                AudioContent = Google.Protobuf.ByteString.CopyFrom(encoded)
-            });
+                await _call.RequestStream.WriteAsync(new VoiceData
+                {
+                    ClientId = _myId!,
+                    TargetId = _targetId!,
+                    AudioContent = Google.Protobuf.ByteString.CopyFrom(encoded)
+                });
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled) { }
         catch (Exception ex)
