@@ -1,18 +1,18 @@
 using System.IO;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
-using Tatehama_tetuden.Contracts;
+using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
 
-public class SoundService : ISoundService
+public class SoundRepository : ISoundRepository
 {
-    private readonly ILogger<SoundService> _logger;
+    private readonly ILogger<SoundRepository> _logger;
     private IWavePlayer? _outputDevice;
     private AudioFileReader? _audioFile;
     private int _currentDeviceId = -1;
 
-    public SoundService(ILogger<SoundService> logger)
+    public SoundRepository(ILogger<SoundRepository> logger)
     {
         _logger = logger;
     }
