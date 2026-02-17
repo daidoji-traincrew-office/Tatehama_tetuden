@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
 using Tatehama_tetuden.Helpers;
@@ -85,34 +84,58 @@ public class SignalingRepository : ISignalingRepository
 
     private void RegisterHandlers()
     {
-        _hubConnection!.On<string>("ReceiveMessage", (json) =>
+        _hubConnection!.On<string>("ReceiveLoginSuccess", (myConnectionId) =>
         {
-            try
-            {
-                var data = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-                if (data != null && data.ContainsKey("type"))
-                {
-                    string type = data["type"];
-                    string Get(string k) => data.ContainsKey(k) ? data[k] : "";
-                    string fromId = Get("from_id");
-                    if (string.IsNullOrEmpty(fromId)) fromId = Get("caller_id");
+            try { LoginSuccess?.Invoke(myConnectionId); }
+            catch (Exception ex) { _logger.LogError(ex, "ReceiveLoginSuccess処理中にエラー発生"); }
+        });
 
-                    switch (type)
-                    {
-                        case "LOGIN_SUCCESS": LoginSuccess?.Invoke(Get("my_id")); break;
-                        case "INCOMING": IncomingCallReceived?.Invoke(Get("from"), Get("caller_id")); break;
-                        case "ANSWERED": AnswerReceived?.Invoke(Get("responder_id")); break;
-                        case "HANGUP": HangupReceived?.Invoke(fromId); break;
-                        case "CANCEL": CancelReceived?.Invoke(fromId); break;
-                        case "REJECT": RejectReceived?.Invoke(fromId); break;
-                        case "BUSY": BusyReceived?.Invoke(); break;
-                        case "HOLD_REQUEST": HoldReceived?.Invoke(); break;
-                        case "RESUME_REQUEST": ResumeReceived?.Invoke(); break;
-                    }
-                }
-            }
-            catch (JsonException ex) { _logger.LogWarning(ex, "SignalRメッセージのJSON解析失敗"); }
-            catch (Exception ex) { _logger.LogError(ex, "SignalRメッセージ処理中にエラー発生"); }
+        _hubConnection!.On<string, string>("ReceiveIncoming", (fromNumber, callerConnectionId) =>
+        {
+            try { IncomingCallReceived?.Invoke(fromNumber, callerConnectionId); }
+            catch (Exception ex) { _logger.LogError(ex, "ReceiveIncoming処理中にエラー発生"); }
+        });
+
+        _hubConnection!.On<string>("ReceiveAnswered", (responderId) =>
+        {
+            try { AnswerReceived?.Invoke(responderId); }
+            catch (Exception ex) { _logger.LogError(ex, "ReceiveAnswered処理中にエラー発生"); }
+        });
+
+        _hubConnection!.On<string>("ReceiveCancel", (callerConnectionId) =>
+        {
+            try { CancelReceived?.Invoke(callerConnectionId); }
+            catch (Exception ex) { _logger.LogError(ex, "ReceiveCancel処理中にエラー発生"); }
+        });
+
+        _hubConnection!.On<string>("ReceiveReject", (fromId) =>
+        {
+            try { RejectReceived?.Invoke(fromId); }
+            catch (Exception ex) { _logger.LogError(ex, "ReceiveReject処理中にエラー発生"); }
+        });
+
+        _hubConnection!.On("ReceiveBusy", () =>
+        {
+            try { BusyReceived?.Invoke(); }
+            catch (Exception ex) { _logger.LogError(ex, "ReceiveBusy処理中にエラー発生"); }
+        });
+
+        _hubConnection!.On("ReceiveHoldRequest", () =>
+        {
+            try { HoldReceived?.Invoke(); }
+            catch (Exception ex) { _logger.LogError(ex, "ReceiveHoldRequest処理中にエラー発生"); }
+        });
+
+        _hubConnection!.On("ReceiveResumeRequest", () =>
+        {
+            try { ResumeReceived?.Invoke(); }
+            catch (Exception ex) { _logger.LogError(ex, "ReceiveResumeRequest処理中にエラー発生"); }
+        });
+
+        _hubConnection!.On<string>("ReceiveHangup", (fromId) =>
+        {
+            try { HangupReceived?.Invoke(fromId); }
+            catch (Exception ex) { _logger.LogError(ex, "ReceiveHangup処理中にエラー発生"); }
         });
     }
 
