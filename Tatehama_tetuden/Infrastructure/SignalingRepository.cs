@@ -5,10 +5,9 @@ using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
 
-public class SignalingRepository : ISignalingRepository
+public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthenticationRepository auth)
+    : ISignalingRepository
 {
-    private readonly ILogger<SignalingRepository> _logger;
-    private readonly IAuthenticationRepository _auth;
     private HubConnection? _hubConnection;
     private bool _isManuallyDisconnecting = false;
 
@@ -25,12 +24,6 @@ public class SignalingRepository : ISignalingRepository
     public event Action?                 Reconnecting;
     public event Action?                 Reconnected;
 
-    public SignalingRepository(ILogger<SignalingRepository> logger, IAuthenticationRepository auth)
-    {
-        _logger = logger;
-        _auth = auth;
-    }
-
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
     public async Task<bool> ConnectAsync()
@@ -39,11 +32,11 @@ public class SignalingRepository : ISignalingRepository
         try
         {
             // トークンを内部で取得
-            string? accessToken = _auth.GetAccessToken();
+            string? accessToken = auth.GetAccessToken();
             if (accessToken == null)
             {
-                bool refreshed = await _auth.RefreshTokenAsync();
-                if (refreshed) accessToken = _auth.GetAccessToken();
+                bool refreshed = await auth.RefreshTokenAsync();
+                if (refreshed) accessToken = auth.GetAccessToken();
             }
 
             var url = $"{ServerAddress.SignalAddress}/hub/phone";
@@ -70,7 +63,7 @@ public class SignalingRepository : ISignalingRepository
             await _hubConnection.StartAsync();
             return true;
         }
-        catch (Exception ex) { _logger.LogWarning(ex, "SignalR接続失敗、再接続を試行します"); RetryConnectionLoop().FireAndForget(_logger, "RetryConnectionLoop"); return false; }
+        catch (Exception ex) { logger.LogWarning(ex, "SignalR接続失敗、再接続を試行します"); RetryConnectionLoop().FireAndForget(logger, "RetryConnectionLoop"); return false; }
     }
 
     private async Task RetryConnectionLoop()
@@ -78,7 +71,7 @@ public class SignalingRepository : ISignalingRepository
         while (!_isManuallyDisconnecting && (_hubConnection == null || _hubConnection.State == HubConnectionState.Disconnected))
         {
             Reconnecting?.Invoke();
-            try { await Task.Delay(5000); await _hubConnection!.StartAsync(); Reconnected?.Invoke(); return; } catch (Exception ex) { _logger.LogDebug(ex, "再接続試行失敗"); }
+            try { await Task.Delay(5000); await _hubConnection!.StartAsync(); Reconnected?.Invoke(); return; } catch (Exception ex) { logger.LogDebug(ex, "再接続試行失敗"); }
         }
     }
 
@@ -87,55 +80,55 @@ public class SignalingRepository : ISignalingRepository
         _hubConnection!.On<string>("ReceiveLoginSuccess", (myConnectionId) =>
         {
             try { LoginSuccess?.Invoke(myConnectionId); }
-            catch (Exception ex) { _logger.LogError(ex, "ReceiveLoginSuccess処理中にエラー発生"); }
+            catch (Exception ex) { logger.LogError(ex, "ReceiveLoginSuccess処理中にエラー発生"); }
         });
 
         _hubConnection!.On<string, string>("ReceiveIncoming", (fromNumber, callerConnectionId) =>
         {
             try { IncomingCallReceived?.Invoke(fromNumber, callerConnectionId); }
-            catch (Exception ex) { _logger.LogError(ex, "ReceiveIncoming処理中にエラー発生"); }
+            catch (Exception ex) { logger.LogError(ex, "ReceiveIncoming処理中にエラー発生"); }
         });
 
         _hubConnection!.On<string>("ReceiveAnswered", (responderId) =>
         {
             try { AnswerReceived?.Invoke(responderId); }
-            catch (Exception ex) { _logger.LogError(ex, "ReceiveAnswered処理中にエラー発生"); }
+            catch (Exception ex) { logger.LogError(ex, "ReceiveAnswered処理中にエラー発生"); }
         });
 
         _hubConnection!.On<string>("ReceiveCancel", (callerConnectionId) =>
         {
             try { CancelReceived?.Invoke(callerConnectionId); }
-            catch (Exception ex) { _logger.LogError(ex, "ReceiveCancel処理中にエラー発生"); }
+            catch (Exception ex) { logger.LogError(ex, "ReceiveCancel処理中にエラー発生"); }
         });
 
         _hubConnection!.On<string>("ReceiveReject", (fromId) =>
         {
             try { RejectReceived?.Invoke(fromId); }
-            catch (Exception ex) { _logger.LogError(ex, "ReceiveReject処理中にエラー発生"); }
+            catch (Exception ex) { logger.LogError(ex, "ReceiveReject処理中にエラー発生"); }
         });
 
         _hubConnection!.On("ReceiveBusy", () =>
         {
             try { BusyReceived?.Invoke(); }
-            catch (Exception ex) { _logger.LogError(ex, "ReceiveBusy処理中にエラー発生"); }
+            catch (Exception ex) { logger.LogError(ex, "ReceiveBusy処理中にエラー発生"); }
         });
 
         _hubConnection!.On("ReceiveHoldRequest", () =>
         {
             try { HoldReceived?.Invoke(); }
-            catch (Exception ex) { _logger.LogError(ex, "ReceiveHoldRequest処理中にエラー発生"); }
+            catch (Exception ex) { logger.LogError(ex, "ReceiveHoldRequest処理中にエラー発生"); }
         });
 
         _hubConnection!.On("ReceiveResumeRequest", () =>
         {
             try { ResumeReceived?.Invoke(); }
-            catch (Exception ex) { _logger.LogError(ex, "ReceiveResumeRequest処理中にエラー発生"); }
+            catch (Exception ex) { logger.LogError(ex, "ReceiveResumeRequest処理中にエラー発生"); }
         });
 
         _hubConnection!.On<string>("ReceiveHangup", (fromId) =>
         {
             try { HangupReceived?.Invoke(fromId); }
-            catch (Exception ex) { _logger.LogError(ex, "ReceiveHangup処理中にエラー発生"); }
+            catch (Exception ex) { logger.LogError(ex, "ReceiveHangup処理中にエラー発生"); }
         });
     }
 

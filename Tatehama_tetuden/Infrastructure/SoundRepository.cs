@@ -5,17 +5,11 @@ using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
 
-public class SoundRepository : ISoundRepository
+public class SoundRepository(ILogger<SoundRepository> logger) : ISoundRepository
 {
-    private readonly ILogger<SoundRepository> _logger;
     private IWavePlayer? _outputDevice;
     private AudioFileReader? _audioFile;
     private int _currentDeviceId = -1;
-
-    public SoundRepository(ILogger<SoundRepository> logger)
-    {
-        _logger = logger;
-    }
 
     public void SetOutputDevice(string? deviceIdStr)
     {
@@ -52,7 +46,7 @@ public class SoundRepository : ISoundRepository
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "効果音再生エラー (soundName={SoundName})", soundName);
+            logger.LogWarning(ex, "効果音再生エラー (soundName={SoundName})", soundName);
         }
     }
 
@@ -71,15 +65,8 @@ public class SoundRepository : ISoundRepository
         Stop();
     }
 
-    private class LoopStream : WaveStream
+    private class LoopStream(WaveStream sourceStream) : WaveStream
     {
-        private readonly WaveStream sourceStream;
-
-        public LoopStream(WaveStream sourceStream)
-        {
-            this.sourceStream = sourceStream;
-        }
-
         public override WaveFormat WaveFormat => sourceStream.WaveFormat;
         public override long Length => long.MaxValue;
         public override long Position

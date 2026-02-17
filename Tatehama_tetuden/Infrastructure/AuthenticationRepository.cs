@@ -6,11 +6,12 @@ using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
 
-public class AuthenticationRepository : IAuthenticationRepository
+public class AuthenticationRepository(
+    ILogger<AuthenticationRepository> logger,
+    OpenIddictClientService openIddictClientService)
+    : IAuthenticationRepository
 {
     private readonly TimeSpan _renewMargin = TimeSpan.FromMinutes(1);
-    private readonly ILogger<AuthenticationRepository> _logger;
-    private readonly OpenIddictClientService _openIddictClientService;
 
     private string _token = "";
     private string _refreshToken = "";
@@ -23,12 +24,6 @@ public class AuthenticationRepository : IAuthenticationRepository
     public event Action? AuthenticationCompleted;
     public event Action<string>? AuthenticationFailed;
 
-    public AuthenticationRepository(ILogger<AuthenticationRepository> logger, OpenIddictClientService openIddictClientService)
-    {
-        _logger = logger;
-        _openIddictClientService = openIddictClientService;
-    }
-
     public async Task<bool> AuthorizeAsync()
     {
         if (ServerAddress.IsDebug)
@@ -38,13 +33,13 @@ public class AuthenticationRepository : IAuthenticationRepository
         using var source = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         try
         {
-            var result = await _openIddictClientService.ChallengeInteractivelyAsync(new()
+            var result = await openIddictClientService.ChallengeInteractivelyAsync(new()
             {
                 CancellationToken = source.Token,
                 Scopes = [OpenIddictConstants.Scopes.OfflineAccess]
             });
 
-            var resultAuth = await _openIddictClientService.AuthenticateInteractivelyAsync(new()
+            var resultAuth = await openIddictClientService.AuthenticateInteractivelyAsync(new()
             {
                 CancellationToken = source.Token,
                 Nonce = result.Nonce
@@ -54,7 +49,7 @@ public class AuthenticationRepository : IAuthenticationRepository
             _tokenExpiration = resultAuth.BackchannelAccessTokenExpirationDate ?? DateTimeOffset.MinValue;
             _refreshToken = resultAuth.RefreshToken ?? "";
 
-            _logger.LogInformation("認証成功");
+            logger.LogInformation("認証成功");
             AuthenticationCompleted?.Invoke();
             return true;
         }
@@ -62,7 +57,7 @@ public class AuthenticationRepository : IAuthenticationRepository
             when (exception.Error == OpenIddictConstants.Errors.AccessDenied)
         {
             string message = "認証が拒否されました。\n司令主任に連絡してください。";
-            _logger.LogWarning(exception, "認証拒否: {Message}", message);
+            logger.LogWarning(exception, "認証拒否: {Message}", message);
             AuthenticationFailed?.Invoke(message);
             return false;
         }
@@ -70,14 +65,14 @@ public class AuthenticationRepository : IAuthenticationRepository
             when (exception.Error == OpenIddictConstants.Errors.ServerError)
         {
             string message = "認証時にサーバーでエラーが発生しました。";
-            _logger.LogError(exception, "サーバーエラー: {Message}", message);
+            logger.LogError(exception, "サーバーエラー: {Message}", message);
             AuthenticationFailed?.Invoke(message);
             return false;
         }
         catch (Exception exception)
         {
             string message = $"認証に失敗しました: {exception.Message}";
-            _logger.LogError(exception, "認証失敗: {Message}", message);
+            logger.LogError(exception, "認証失敗: {Message}", message);
             AuthenticationFailed?.Invoke(message);
             return false;
         }
@@ -87,13 +82,13 @@ public class AuthenticationRepository : IAuthenticationRepository
     {
         if (string.IsNullOrEmpty(_refreshToken))
         {
-            _logger.LogDebug("リフレッシュトークン未設定");
+            logger.LogDebug("リフレッシュトークン未設定");
             return false;
         }
 
         try
         {
-            var result = await _openIddictClientService.AuthenticateWithRefreshTokenAsync(new()
+            var result = await openIddictClientService.AuthenticateWithRefreshTokenAsync(new()
             {
                 CancellationToken = CancellationToken.None,
                 RefreshToken = _refreshToken
@@ -103,7 +98,7 @@ public class AuthenticationRepository : IAuthenticationRepository
             _tokenExpiration = result.AccessTokenExpirationDate ?? DateTimeOffset.MinValue;
             _refreshToken = result.RefreshToken ?? "";
 
-            _logger.LogInformation("トークン更新成功");
+            logger.LogInformation("トークン更新成功");
             return true;
         }
         catch (OpenIddictExceptions.ProtocolException ex)
@@ -111,12 +106,12 @@ public class AuthenticationRepository : IAuthenticationRepository
                               or OpenIddictConstants.Errors.InvalidGrant
                               or OpenIddictConstants.Errors.ExpiredToken)
         {
-            _logger.LogWarning(ex, "リフレッシュトークンが無効または期限切れ");
+            logger.LogWarning(ex, "リフレッシュトークンが無効または期限切れ");
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "トークン更新中にエラー");
+            logger.LogError(ex, "トークン更新中にエラー");
             return false;
         }
     }
@@ -150,7 +145,7 @@ public class AuthenticationRepository : IAuthenticationRepository
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "JWTトークン解析エラー");
+            logger.LogWarning(ex, "JWTトークン解析エラー");
             return new List<string>();
         }
     }

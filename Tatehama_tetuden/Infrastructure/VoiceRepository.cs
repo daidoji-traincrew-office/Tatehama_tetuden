@@ -10,10 +10,9 @@ using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
 
-public class VoiceRepository : IVoiceRepository
+public class VoiceRepository(ILogger<VoiceRepository> logger, IAuthenticationRepository auth)
+    : IVoiceRepository
 {
-    private readonly ILogger<VoiceRepository> _logger;
-    private readonly IAuthenticationRepository _auth;
     private readonly WaveFormat _format = new WaveFormat(8000, 16, 1);
 
     private GrpcChannel? _channel;
@@ -28,12 +27,6 @@ public class VoiceRepository : IVoiceRepository
     private string? _targetId;
     private volatile bool _isActive = false;
 
-    public VoiceRepository(ILogger<VoiceRepository> logger, IAuthenticationRepository auth)
-    {
-        _logger = logger;
-        _auth = auth;
-    }
-
     public bool IsMuted { get; set; } = false;
 
     public async Task StartTransmission(string myId, string targetId, int inputDevId, int outputDevId)
@@ -41,7 +34,7 @@ public class VoiceRepository : IVoiceRepository
         if (_isActive) await StopTransmission();
 
         // トークンを内部で取得
-        string? accessToken = _auth.GetAccessToken();
+        string? accessToken = auth.GetAccessToken();
 
         _myId = myId;
         _targetId = targetId;
@@ -73,13 +66,13 @@ public class VoiceRepository : IVoiceRepository
             _call = _client.JoinSession(callOptions);
             _isActive = true;
 
-            Task.Run(ReceiveLoop).FireAndForget(_logger, "ReceiveLoop");
+            Task.Run(ReceiveLoop).FireAndForget(logger, "ReceiveLoop");
 
             _waveIn!.StartRecording();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "gRPC音声通信の開始に失敗");
+            logger.LogError(ex, "gRPC音声通信の開始に失敗");
         }
     }
 
@@ -105,7 +98,7 @@ public class VoiceRepository : IVoiceRepository
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "音声出力デバイス初期化失敗 (deviceId={DeviceId})", deviceId);
+            logger.LogError(ex, "音声出力デバイス初期化失敗 (deviceId={DeviceId})", deviceId);
         }
     }
 
@@ -133,7 +126,7 @@ public class VoiceRepository : IVoiceRepository
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled) { }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "音声データ送信エラー");
+            logger.LogWarning(ex, "音声データ送信エラー");
         }
     }
 
@@ -164,7 +157,7 @@ public class VoiceRepository : IVoiceRepository
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled) { }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "gRPC音声受信エラー");
+            logger.LogWarning(ex, "gRPC音声受信エラー");
         }
     }
 
@@ -193,7 +186,7 @@ public class VoiceRepository : IVoiceRepository
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "音声通信クリーンアップエラー");
+            logger.LogDebug(ex, "音声通信クリーンアップエラー");
         }
     }
 
