@@ -1,10 +1,10 @@
-namespace Tatehama_tetuden.Contracts;
+namespace Tatehama_tetuden.Repositories;
 
-public interface ISignalingService : IDisposable, IAsyncDisposable
+public interface ISignalingRepository : IDisposable, IAsyncDisposable
 {
     bool IsConnected { get; }
 
-    Task<bool> ConnectAsync(string? accessToken = null);
+    Task<bool> ConnectAsync();
     Task SendLogin(string myNumber);
     Task SendCall(string targetNumber);
     Task SendAnswer(string targetNumber, string callerId);

@@ -1,6 +1,6 @@
 using Tatehama_tetuden.Models;
 
-namespace Tatehama_tetuden.Contracts;
+namespace Tatehama_tetuden.Repositories;
 
 public interface IPhoneBookRepository
 {

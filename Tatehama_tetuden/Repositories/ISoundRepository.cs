@@ -1,6 +1,6 @@
-namespace Tatehama_tetuden.Contracts;
+namespace Tatehama_tetuden.Repositories;
 
-public interface ISoundService : IDisposable
+public interface ISoundRepository : IDisposable
 {
     void Play(string soundName, bool loop = false, int loopIntervalMs = 0);
     void Stop();
