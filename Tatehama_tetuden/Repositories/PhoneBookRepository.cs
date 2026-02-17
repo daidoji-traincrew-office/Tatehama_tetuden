@@ -4,9 +4,8 @@ namespace Tatehama_tetuden.Repositories
 {
     public class PhoneBookRepository : IPhoneBookRepository
     {
-        private static readonly List<PhoneBookEntry> _entries = new List<PhoneBookEntry>
-        {
-            // --- 100番台: 司令・サーバー ---
+        private static readonly List<PhoneBookEntry> _entries =
+        [
             new PhoneBookEntry { Name = "総合司令所 館浜司令", Number = "101", Category = "司令" },
             new PhoneBookEntry { Name = "総合司令所 館浜司令2", Number = "102", Category = "司令" },
             new PhoneBookEntry { Name = "総合司令所 サーバー室", Number = "103", Category = "司令" },
@@ -33,8 +32,8 @@ namespace Tatehama_tetuden.Repositories
 
             // --- 400番台: 列車区 ---
             new PhoneBookEntry { Name = "駒野列車区", Number = "401", Category = "列車区" },
-            new PhoneBookEntry { Name = "大道寺列車区", Number = "402", Category = "列車区" },
-        };
+            new PhoneBookEntry { Name = "大道寺列車区", Number = "402", Category = "列車区" }
+        ];
 
         public List<PhoneBookEntry> GetAll() => _entries;
 

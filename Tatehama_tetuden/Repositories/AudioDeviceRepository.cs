@@ -4,15 +4,8 @@ using Tatehama_tetuden.Models;
 
 namespace Tatehama_tetuden.Repositories
 {
-    public class AudioDeviceRepository
+    public class AudioDeviceRepository(ILogger<AudioDeviceRepository> logger)
     {
-        private readonly ILogger<AudioDeviceRepository> _logger;
-
-        public AudioDeviceRepository(ILogger<AudioDeviceRepository> logger)
-        {
-            _logger = logger;
-        }
-
         public List<DeviceInfo> GetInputDevices()
         {
             var devices = new List<DeviceInfo>();
@@ -26,7 +19,7 @@ namespace Tatehama_tetuden.Repositories
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "入力デバイス列挙失敗");
+                logger.LogWarning(ex, "入力デバイス列挙失敗");
             }
             return devices;
         }
@@ -44,7 +37,7 @@ namespace Tatehama_tetuden.Repositories
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "出力デバイス列挙失敗");
+                logger.LogWarning(ex, "出力デバイス列挙失敗");
             }
             return devices;
         }
