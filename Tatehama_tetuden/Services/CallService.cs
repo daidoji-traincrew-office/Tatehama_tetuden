@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Tatehama_tetuden.Helpers;
 using Tatehama_tetuden.Models;
 using Tatehama_tetuden.Repositories;
 
@@ -89,26 +88,51 @@ namespace Tatehama_tetuden.Services
         private void SetupSignalingEvents()
         {
             _signaling.LoginSuccess         += (id)               => { _myConnectionId = id; };
-            _signaling.IncomingCallReceived += (number, callerId) => HandleIncomingCall(number, callerId).FireAndForget(_logger, "HandleIncomingCall");
-            _signaling.AnswerReceived       += (responderId)      => HandleAnswered(responderId).FireAndForget(_logger, "HandleAnswered");
-            _signaling.HangupReceived       += (fromId)           =>
+            _signaling.IncomingCallReceived += async (number, callerId) =>
             {
-                if (string.IsNullOrEmpty(fromId) || fromId == _targetConnectionId)
-                    EndCallInternal(sendSignal: false, playSound: true).FireAndForget(_logger, "HandleHangup");
+                try { await HandleIncomingCall(number, callerId); }
+                catch (Exception ex) { _logger.LogError(ex, "着信処理中にエラー"); }
             };
-            _signaling.CancelReceived       += (fromId)           =>
+            _signaling.AnswerReceived       += async (responderId) =>
             {
-                if (CurrentStatus == PhoneStatus.Incoming && fromId == _targetConnectionId)
-                    EndCallInternal(sendSignal: false, playSound: false).FireAndForget(_logger, "HandleCancel");
+                try { await HandleAnswered(responderId); }
+                catch (Exception ex) { _logger.LogError(ex, "応答処理中にエラー"); }
             };
-            _signaling.RejectReceived       += (fromId)           => HandleRejected().FireAndForget(_logger, "HandleRejected");
-            _signaling.BusyReceived         += ()                 => HandleBusySignal().FireAndForget(_logger, "HandleBusySignal");
+            _signaling.HangupReceived       += async (fromId) =>
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(fromId) || fromId == _targetConnectionId)
+                        await EndCallInternal(sendSignal: false, playSound: true);
+                }
+                catch (Exception ex) { _logger.LogError(ex, "切断処理中にエラー"); }
+            };
+            _signaling.CancelReceived       += async (fromId) =>
+            {
+                try
+                {
+                    if (CurrentStatus == PhoneStatus.Incoming && fromId == _targetConnectionId)
+                        await EndCallInternal(sendSignal: false, playSound: false);
+                }
+                catch (Exception ex) { _logger.LogError(ex, "キャンセル処理中にエラー"); }
+            };
+            _signaling.RejectReceived       += async (fromId) =>
+            {
+                try { await HandleRejected(); }
+                catch (Exception ex) { _logger.LogError(ex, "拒否処理中にエラー"); }
+            };
+            _signaling.BusyReceived         += async () =>
+            {
+                try { await HandleBusySignal(); }
+                catch (Exception ex) { _logger.LogError(ex, "話中処理中にエラー"); }
+            };
             _signaling.HoldReceived         += ()                 => HandleRemoteHold(true);
             _signaling.ResumeReceived       += ()                 => HandleRemoteHold(false);
             _signaling.ConnectionLost       += ()                 => { IsOnline = false; OnlineStateChanged?.Invoke(false); };
-            _signaling.Reconnected          += ()                 =>
+            _signaling.Reconnected          += async () =>
             {
-                _signaling.SendLogin(CurrentStation!.Number).FireAndForget(_logger, "Reconnect SendLogin");
+                try { await _signaling.SendLogin(CurrentStation!.Number); }
+                catch (Exception ex) { _logger.LogError(ex, "再接続ログイン中にエラー"); }
                 IsOnline = true;
                 OnlineStateChanged?.Invoke(true);
             };

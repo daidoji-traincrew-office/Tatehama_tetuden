@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using NAudio.Codecs;
 using NAudio.Wave;
 using RailwayPhone.Protos;
-using Tatehama_tetuden.Helpers;
 using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
@@ -66,7 +65,11 @@ public class VoiceRepository(ILogger<VoiceRepository> logger, IAuthenticationRep
             _call = _client.JoinSession(callOptions);
             _isActive = true;
 
-            Task.Run(ReceiveLoop).FireAndForget(logger, "ReceiveLoop");
+            _ = Task.Run(async () =>
+            {
+                try { await ReceiveLoop(); }
+                catch (Exception ex) { logger.LogError(ex, "ReceiveLoop中にエラー"); }
+            });
 
             _waveIn!.StartRecording();
         }

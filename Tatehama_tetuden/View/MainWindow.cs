@@ -7,7 +7,7 @@ using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using CommunityToolkit.WinUI.Notifications;
-using Tatehama_tetuden.Helpers;
+using Microsoft.Extensions.Logging;
 using Tatehama_tetuden.Models;
 using Tatehama_tetuden.Repositories;
 using Tatehama_tetuden.Services;
@@ -17,6 +17,7 @@ namespace Tatehama_tetuden.View
     public class MainWindow : Window
     {
         // --- サービス・リポジトリ ---
+        private readonly ILogger<MainWindow>  _logger;
         private readonly CallService         _callService;
         private readonly PhoneBookRepository _phoneBookRepo;
         private readonly AudioDeviceRepository _audioDeviceRepo;
@@ -63,8 +64,9 @@ namespace Tatehama_tetuden.View
         /// <summary>
         /// DI コンストラクタ（サービスのみを受け取る）
         /// </summary>
-        public MainWindow(CallService callService, PhoneBookRepository phoneBookRepo, AudioDeviceRepository audioDeviceRepo)
+        public MainWindow(ILogger<MainWindow> logger, CallService callService, PhoneBookRepository phoneBookRepo, AudioDeviceRepository audioDeviceRepo)
         {
+            _logger = logger;
             _callService = callService;
             _phoneBookRepo = phoneBookRepo;
             _audioDeviceRepo = audioDeviceRepo;
@@ -80,9 +82,16 @@ namespace Tatehama_tetuden.View
             InitializeComponents();
             SubscribeToCallService();
 
-            Closing += (s, e) =>
+            Closing += async (s, e) =>
             {
-                _callService.DisposeAsync().AsTask().FireAndForget(context: "CallService Dispose");
+                try
+                {
+                    await _callService.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "CallService Dispose中にエラー");
+                }
                 ToastNotificationManagerCompat.Uninstall();
             };
         }
@@ -238,7 +247,15 @@ namespace Tatehama_tetuden.View
             win.Owner = this;
             if (win.ShowDialog() == true && win.SelectedStation != null)
             {
-                _callService.ChangeStation(win.SelectedStation).FireAndForget(context: "ChangeStation");
+                try
+                {
+                    await _callService.ChangeStation(win.SelectedStation);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "局変更の処理中にエラー");
+                    MessageBox.Show("局変更の処理中にエラーが発生しました", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
         }
 
@@ -432,7 +449,11 @@ namespace Tatehama_tetuden.View
 
             _callBtn = new Button { Content = GetPhoneIcon(false), Height = 50, Background = _primaryColor, Foreground = Brushes.White, Margin = new Thickness(10, 0, 10, 0) };
             var sC = new Style(typeof(Border)); sC.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(25))); _callBtn.Resources.Add(typeof(Border), sC);
-            _callBtn.Click += (s, e) => _callService.StartCall(_inputNumberBox.Text.Trim()).FireAndForget(context: "StartCall");
+            _callBtn.Click += async (s, e) =>
+            {
+                try { await _callService.StartCall(_inputNumberBox.Text.Trim()); }
+                catch (Exception ex) { _logger.LogError(ex, "発信の処理中にエラー"); MessageBox.Show("発信の処理中にエラーが発生しました", "エラー", MessageBoxButton.OK, MessageBoxImage.Error); }
+            };
             p.Children.Add(_callBtn);
             return p;
         }
@@ -449,12 +470,20 @@ namespace Tatehama_tetuden.View
 
             var ansBtn = new Button { Content = GetPhoneIcon(false), Height = 60, Background = _acceptColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
             var sA = new Style(typeof(Border)); sA.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); ansBtn.Resources.Add(typeof(Border), sA);
-            ansBtn.Click += (s, e) => _callService.AnswerCall().FireAndForget(context: "AnswerCall");
+            ansBtn.Click += async (s, e) =>
+            {
+                try { await _callService.AnswerCall(); }
+                catch (Exception ex) { _logger.LogError(ex, "応答の処理中にエラー"); MessageBox.Show("応答の処理中にエラーが発生しました", "エラー", MessageBoxButton.OK, MessageBoxImage.Error); }
+            };
             Grid.SetColumn(ansBtn, 0); bg.Children.Add(ansBtn);
 
             var rb = new Button { Content = GetPhoneIcon(true), Height = 60, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
             var sR = new Style(typeof(Border)); sR.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); rb.Resources.Add(typeof(Border), sR);
-            rb.Click += (s, e) => _callService.EndCall().FireAndForget(context: "EndCall");
+            rb.Click += async (s, e) =>
+            {
+                try { await _callService.EndCall(); }
+                catch (Exception ex) { _logger.LogError(ex, "切断の処理中にエラー"); MessageBox.Show("切断の処理中にエラーが発生しました", "エラー", MessageBoxButton.OK, MessageBoxImage.Error); }
+            };
             Grid.SetColumn(rb, 2); bg.Children.Add(rb);
             p.Children.Add(bg);
             return p;
@@ -470,7 +499,11 @@ namespace Tatehama_tetuden.View
 
             var cancelBtn = new Button { Content = GetPhoneIcon(true), Width = 200, Height = 60, Background = _dangerColor, Foreground = Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
             var sC = new Style(typeof(Border)); sC.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(30))); cancelBtn.Resources.Add(typeof(Border), sC);
-            cancelBtn.Click += (s, e) => _callService.EndCall().FireAndForget(context: "EndCall");
+            cancelBtn.Click += async (s, e) =>
+            {
+                try { await _callService.EndCall(); }
+                catch (Exception ex) { _logger.LogError(ex, "切断の処理中にエラー"); MessageBox.Show("切断の処理中にエラーが発生しました", "エラー", MessageBoxButton.OK, MessageBoxImage.Error); }
+            };
             p.Children.Add(cancelBtn);
             return p;
         }
@@ -499,12 +532,20 @@ namespace Tatehama_tetuden.View
 
             var b1 = CreateControlBtn("🔇", "ミュート", (s, e) => { _callService.ToggleMute();    UpdateButtonVisuals(); }, out _muteBtn, out _muteBtnLabel); Grid.SetColumn(b1, 0); bg.Children.Add(b1);
             var b2 = CreateControlBtn("🔊", "スピーカー", (s, e) => { _callService.ToggleSpeaker(); UpdateButtonVisuals(); }, out _speakerBtn, out _muteBtnLabel); Grid.SetColumn(b2, 1); bg.Children.Add(b2);
-            var b3 = CreateControlBtn("⏸", "保 留", (s, e) => { _callService.ToggleHold().FireAndForget(context: "ToggleHold"); UpdateButtonVisuals(); }, out _holdBtn, out _holdBtnLabel); Grid.SetColumn(b3, 2); bg.Children.Add(b3);
+            var b3 = CreateControlBtn("⏸", "保 留", async (s, e) =>
+            {
+                try { await _callService.ToggleHold(); UpdateButtonVisuals(); }
+                catch (Exception ex) { _logger.LogError(ex, "保留の処理中にエラー"); MessageBox.Show("保留の処理中にエラーが発生しました", "エラー", MessageBoxButton.OK, MessageBoxImage.Error); }
+            }, out _holdBtn, out _holdBtnLabel); Grid.SetColumn(b3, 2); bg.Children.Add(b3);
             p.Children.Add(bg);
 
             var endBtn = new Button { Content = GetPhoneIcon(true), Width = 80, Height = 80, Background = _dangerColor, Foreground = Brushes.White, Margin = new Thickness(0, 0, 0, 20), Cursor = System.Windows.Input.Cursors.Hand };
             var sE = new Style(typeof(Border)); sE.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(40))); endBtn.Resources.Add(typeof(Border), sE);
-            endBtn.Click += (s, e) => _callService.EndCall().FireAndForget(context: "EndCall");
+            endBtn.Click += async (s, e) =>
+            {
+                try { await _callService.EndCall(); }
+                catch (Exception ex) { _logger.LogError(ex, "切断の処理中にエラー"); MessageBox.Show("切断の処理中にエラーが発生しました", "エラー", MessageBoxButton.OK, MessageBoxImage.Error); }
+            };
             p.Children.Add(endBtn);
             return p;
         }

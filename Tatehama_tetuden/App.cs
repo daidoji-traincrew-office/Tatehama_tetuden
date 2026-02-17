@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenIddict.Client;
-using Tatehama_tetuden.Helpers;
 using Tatehama_tetuden.Infrastructure;
 using Tatehama_tetuden.Models;
 using Tatehama_tetuden.Repositories;
@@ -121,11 +120,21 @@ namespace Tatehama_tetuden
                 };
 
                 // 2. バックグラウンドで認証を試みる
-                Task.Run(async () =>
+                _ = Task.Run(async () =>
                 {
-                    await Task.Delay(500); // UI の初期化を待つ
-                    await TryAuthenticationFlowAsync();
-                }).FireAndForget(context: "初期認証フロー");
+                    try
+                    {
+                        await Task.Delay(500); // UI の初期化を待つ
+                        await TryAuthenticationFlowAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            MessageBox.Show($"初期認証エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                        });
+                    }
+                });
             }
             catch (Exception ex)
             {

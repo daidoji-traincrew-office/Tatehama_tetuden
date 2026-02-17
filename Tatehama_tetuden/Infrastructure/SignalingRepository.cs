@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
-using Tatehama_tetuden.Helpers;
 using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
@@ -63,7 +62,16 @@ public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthentic
             await _hubConnection.StartAsync();
             return true;
         }
-        catch (Exception ex) { logger.LogWarning(ex, "SignalR接続失敗、再接続を試行します"); RetryConnectionLoop().FireAndForget(logger, "RetryConnectionLoop"); return false; }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "SignalR接続失敗、再接続を試行します");
+            _ = Task.Run(async () =>
+            {
+                try { await RetryConnectionLoop(); }
+                catch (Exception retryEx) { logger.LogError(retryEx, "RetryConnectionLoop中にエラー"); }
+            });
+            return false;
+        }
     }
 
     private async Task RetryConnectionLoop()
@@ -134,7 +142,7 @@ public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthentic
 
     public async Task SendLogin(string myNumber)  { if (IsConnected) await _hubConnection!.InvokeAsync("Login", myNumber); }
     public async Task SendCall(string targetNumber) { if (IsConnected) await _hubConnection!.InvokeAsync("Call", targetNumber); }
-    public async Task SendAnswer(string targetNumber, string callerId) { if (IsConnected) await _hubConnection!.InvokeAsync("Answer", targetNumber, callerId); }
+    public async Task SendAnswer(string targetNumber, string callerId) { if (IsConnected) await _hubConnection!.InvokeAsync("Answer", callerId); }
     public async Task SendReject(string callerId)   { if (IsConnected) await _hubConnection!.InvokeAsync("Reject", callerId); }
     public async Task SendHangup(string targetId)   { if (IsConnected) await _hubConnection!.InvokeAsync("Hangup", targetId); }
     public async Task SendBusy(string callerId)     { if (IsConnected) await _hubConnection!.InvokeAsync("Busy", callerId); }
