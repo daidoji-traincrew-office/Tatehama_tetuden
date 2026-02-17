@@ -1,14 +1,15 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
-using Tatehama_tetuden.Contracts;
 using Tatehama_tetuden.Helpers;
+using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Infrastructure;
 
-public class SignalingService : ISignalingService
+public class SignalingRepository : ISignalingRepository
 {
-    private readonly ILogger<SignalingService> _logger;
+    private readonly ILogger<SignalingRepository> _logger;
+    private readonly IAuthenticationRepository _auth;
     private HubConnection? _hubConnection;
     private bool _isManuallyDisconnecting = false;
 
@@ -25,18 +26,27 @@ public class SignalingService : ISignalingService
     public event Action?                 Reconnecting;
     public event Action?                 Reconnected;
 
-    public SignalingService(ILogger<SignalingService> logger)
+    public SignalingRepository(ILogger<SignalingRepository> logger, IAuthenticationRepository auth)
     {
         _logger = logger;
+        _auth = auth;
     }
 
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
-    public async Task<bool> ConnectAsync(string? accessToken = null)
+    public async Task<bool> ConnectAsync()
     {
         if (_hubConnection != null && _hubConnection.State == HubConnectionState.Connected) return true;
         try
         {
+            // トークンを内部で取得
+            string? accessToken = _auth.GetAccessToken();
+            if (accessToken == null)
+            {
+                bool refreshed = await _auth.RefreshTokenAsync();
+                if (refreshed) accessToken = _auth.GetAccessToken();
+            }
+
             var url = $"{ServerAddress.SignalAddress}/hub/phone";
 
             if (_hubConnection != null) await _hubConnection.DisposeAsync();
@@ -44,7 +54,6 @@ public class SignalingService : ISignalingService
             _hubConnection = new HubConnectionBuilder()
                 .WithUrl(url, options =>
                 {
-                    // トークンを Authorization ヘッダーで送信（クエリ文字列に載せない）
                     if (!string.IsNullOrEmpty(accessToken))
                     {
                         options.AccessTokenProvider = () => Task.FromResult<string?>(accessToken);
@@ -116,8 +125,6 @@ public class SignalingService : ISignalingService
     public async Task SendHold(string targetId)     { if (IsConnected) await _hubConnection!.InvokeAsync("Hold", targetId); }
     public async Task SendResume(string targetId)   { if (IsConnected) await _hubConnection!.InvokeAsync("Resume", targetId); }
 
-    // 注意: UI スレッドから呼ばれるとデッドロックリスクあり。
-    // 可能な限り DisposeAsync() を使うこと。
     public void Dispose()
     {
         DisposeAsync().GetAwaiter().GetResult();
