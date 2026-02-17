@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
-using Tatehama_tetuden.Contracts;
 using Tatehama_tetuden.Helpers;
 using Tatehama_tetuden.Models;
+using Tatehama_tetuden.Repositories;
 
 namespace Tatehama_tetuden.Services
 {
@@ -9,11 +9,10 @@ namespace Tatehama_tetuden.Services
     {
         // --- 依存（インターフェース） ---
         private readonly ILogger<CallService> _logger;
-        private readonly ISignalingService   _signaling;
-        private readonly IVoiceService       _voice;
-        private readonly ISoundService       _sound;
+        private readonly ISignalingRepository   _signaling;
+        private readonly IVoiceRepository       _voice;
+        private readonly ISoundRepository       _sound;
         private readonly IPhoneBookRepository _phoneBookRepo;
-        private readonly IAuthenticationService _auth;
 
         // --- オーディオデバイス ---
         private DeviceInfo? _currentInputDevice;
@@ -49,14 +48,13 @@ namespace Tatehama_tetuden.Services
         private readonly SemaphoreSlim _stateLock = new(1, 1);
 
         /// <summary>コンストラクタインジェクション。テストでモックを渡す。</summary>
-        public CallService(ILogger<CallService> logger, ISignalingService signaling, IVoiceService voice, ISoundService sound, IPhoneBookRepository phoneBookRepo, IAuthenticationService auth)
+        public CallService(ILogger<CallService> logger, ISignalingRepository signaling, IVoiceRepository voice, ISoundRepository sound, IPhoneBookRepository phoneBookRepo)
         {
             _logger        = logger;
             _signaling     = signaling;
             _voice         = voice;
             _sound         = sound;
             _phoneBookRepo = phoneBookRepo;
-            _auth          = auth;
         }
 
         // --- 初期化 ---
@@ -67,7 +65,7 @@ namespace Tatehama_tetuden.Services
             _currentInputDevice  = inputDev;
             _normalOutputDevice  = normalOut;
             _speakerOutputDevice = speakerOut;
-            SetupSignalREvents();
+            SetupSignalingEvents();
             _sound.SetOutputDevice(normalOut?.ID);
         }
 
@@ -75,19 +73,7 @@ namespace Tatehama_tetuden.Services
 
         public async Task ConnectAsync()
         {
-            // トークンを取得
-            string? token = _auth.GetAccessToken();
-            if (token == null)
-            {
-                // トークンが期限切れの場合、更新を試みる
-                bool refreshed = await _auth.RefreshTokenAsync();
-                if (refreshed)
-                {
-                    token = _auth.GetAccessToken();
-                }
-            }
-
-            bool success = await _signaling.ConnectAsync(token);
+            bool success = await _signaling.ConnectAsync();
             if (success)
             {
                 await _signaling.SendLogin(CurrentStation!.Number);
@@ -100,7 +86,7 @@ namespace Tatehama_tetuden.Services
             OnlineStateChanged?.Invoke(IsOnline);
         }
 
-        private void SetupSignalREvents()
+        private void SetupSignalingEvents()
         {
             _signaling.LoginSuccess         += (id)               => { _myConnectionId = id; };
             _signaling.IncomingCallReceived += (number, callerId) => HandleIncomingCall(number, callerId).FireAndForget(_logger, "HandleIncomingCall");
@@ -367,13 +353,10 @@ namespace Tatehama_tetuden.Services
 
         private async Task StartVoiceTransmission(string targetId)
         {
-            // トークンを取得
-            string? token = _auth.GetAccessToken();
-
             int inDev = -1, outDevId = -1;
             if (_currentInputDevice != null)  int.TryParse(_currentInputDevice.ID,  out inDev);
             if (_normalOutputDevice != null)  int.TryParse(_normalOutputDevice.ID,  out outDevId);
-            await _voice.StartTransmission(_myConnectionId ?? "", targetId, inDev, outDevId, token);
+            await _voice.StartTransmission(_myConnectionId ?? "", targetId, inDev, outDevId);
         }
 
         private async Task EndCallInternal(bool sendSignal, bool playSound)
@@ -413,8 +396,6 @@ namespace Tatehama_tetuden.Services
             CallEnded?.Invoke();
         }
 
-        // 注意: UI スレッドから呼ばれるとデッドロックリスクあり。
-        // 可能な限り DisposeAsync() を使うこと。
         public void Dispose()
         {
             DisposeAsync().GetAwaiter().GetResult();
