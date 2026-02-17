@@ -5,9 +5,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenIddict.Client;
-using Tatehama_tetuden.Contracts;
 using Tatehama_tetuden.Helpers;
 using Tatehama_tetuden.Infrastructure;
+using Tatehama_tetuden.Models;
 using Tatehama_tetuden.Repositories;
 using Tatehama_tetuden.Services;
 using Tatehama_tetuden.View;
@@ -29,7 +29,11 @@ namespace Tatehama_tetuden
             {
                 // IHost の初期化
                 _host = new HostBuilder()
-                    .ConfigureLogging(options => options.AddDebug())
+                    .ConfigureLogging(options =>
+                    {
+                        options.AddConsole();
+                        options.AddDebug();
+                    })
                     .ConfigureServices(services =>
                     {
                         // DbContext の設定（OpenIddict が内部状態を保存するために必要）
@@ -71,11 +75,11 @@ namespace Tatehama_tetuden
                         services.AddSingleton<IPhoneBookRepository>(sp => sp.GetRequiredService<PhoneBookRepository>());
                         services.AddSingleton<AudioDeviceRepository>();
 
-                        // サービスの登録
-                        services.AddSingleton<ISignalingService, SignalingService>();
-                        services.AddSingleton<IVoiceService, VoiceService>();
-                        services.AddSingleton<ISoundService, SoundService>();
-                        services.AddSingleton<IAuthenticationService, AuthenticationService>();
+                        // インフラ実装の登録
+                        services.AddSingleton<IAuthenticationRepository, AuthenticationRepository>();
+                        services.AddSingleton<ISignalingRepository, SignalingRepository>();
+                        services.AddSingleton<IVoiceRepository, VoiceRepository>();
+                        services.AddSingleton<ISoundRepository, SoundRepository>();
                         services.AddSingleton<CallService>();
 
                         // ウィンドウの登録
@@ -107,7 +111,7 @@ namespace Tatehama_tetuden
                 mainWindow.Show();
 
                 // AuthenticationFailed イベントをサブスクライブして UI でエラー表示
-                var authService = _host.Services.GetRequiredService<IAuthenticationService>();
+                var authService = _host.Services.GetRequiredService<IAuthenticationRepository>();
                 authService.AuthenticationFailed += (message) =>
                 {
                     Dispatcher.InvokeAsync(() =>
@@ -136,10 +140,10 @@ namespace Tatehama_tetuden
         {
             try
             {
-                var authService = _host!.Services.GetRequiredService<IAuthenticationService>();
+                var authRepo = _host!.Services.GetRequiredService<IAuthenticationRepository>();
 
                 // 認証処理を実行
-                bool authSuccess = await authService.AuthorizeAsync();
+                bool authSuccess = await authRepo.AuthorizeAsync();
 
                 if (!authSuccess)
                 {
@@ -150,7 +154,35 @@ namespace Tatehama_tetuden
                 // 認証成功後、駅選択画面を表示（UI スレッドで）
                 await Dispatcher.InvokeAsync(async () =>
                 {
-                    var allowedStations = await authService.GetAllowedStationsAsync();
+                    var phoneBookRepo = _host.Services.GetRequiredService<IPhoneBookRepository>();
+
+                    List<PhoneBookEntry> allowedStations;
+
+                    if (ServerAddress.IsDebug)
+                    {
+                        allowedStations = phoneBookRepo.GetAll();
+                    }
+                    else
+                    {
+                        var roleClaims = authRepo.GetRoleClaims();
+                        var allowedStationNumbers = roleClaims
+                            .Where(r => r.StartsWith("Station:", StringComparison.OrdinalIgnoreCase))
+                            .Select(r => r.Substring("Station:".Length))
+                            .ToList();
+
+                        var allStations = await phoneBookRepo.GetAllStationsAsync();
+
+                        if (allowedStationNumbers.Count > 0)
+                        {
+                            allowedStations = allStations
+                                .Where(s => allowedStationNumbers.Contains(s.Number))
+                                .ToList();
+                        }
+                        else
+                        {
+                            allowedStations = allStations;
+                        }
+                    }
 
                     if (allowedStations.Count == 0)
                     {
@@ -163,7 +195,6 @@ namespace Tatehama_tetuden
 
                     if (result == true && selectionWindow.SelectedStation != null)
                     {
-                        // MainWindow を取得して初期化
                         var mainWindow = _host.Services.GetRequiredService<MainWindow>();
                         await mainWindow.InitializeWithStationAsync(selectionWindow.SelectedStation);
                     }
