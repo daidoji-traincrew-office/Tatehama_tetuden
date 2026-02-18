@@ -19,7 +19,6 @@ namespace Tatehama_tetuden.Services
         private DeviceInfo? _speakerOutputDevice;
 
         // --- 接続状態 ---
-        private string? _myConnectionId;
         public  bool    IsOnline { get; private set; }
 
         // --- 通話状態 ---
@@ -33,7 +32,6 @@ namespace Tatehama_tetuden.Services
         public  bool            IsMyHold               { get; private set; }
         public  string          HoldStatusText         => IsMyHold ? "保留中" : "相手が保留";
 
-        private string? _targetConnectionId;
         private string? _connectedTargetNumber;
         private bool    _isRemoteHold;
 
@@ -92,9 +90,9 @@ namespace Tatehama_tetuden.Services
                 try { await HandleIncomingCall(fromNumber); }
                 catch (Exception ex) { _logger.LogError(ex, "着信処理中にエラー"); }
             };
-            _signaling.AnswerReceived       += async (responderId) =>
+            _signaling.AnswerReceived       += async () =>
             {
-                try { await HandleAnswered(responderId); }
+                try { await HandleAnswered(); }
                 catch (Exception ex) { _logger.LogError(ex, "応答処理中にエラー"); }
             };
             _signaling.HangupReceived       += async () =>
@@ -190,10 +188,8 @@ namespace Tatehama_tetuden.Services
         {
             _sound.Stop();
             _sound.Play(SoundName.Tori);
-            var response = await _signaling.SendAnswer();
-            _myConnectionId = response.MyConnectionId;
-            _targetConnectionId = response.CallerConnectionId;
-            await StartVoiceTransmission(_targetConnectionId);
+            await _signaling.SendAnswer();
+            await StartVoiceTransmission();
 
             CurrentStatus  = PhoneStatus.Talking;
             CallStartTime  = DateTime.Now;
@@ -267,13 +263,12 @@ namespace Tatehama_tetuden.Services
             }
         }
 
-        private async Task HandleAnswered(string responderId)
+        private async Task HandleAnswered()
         {
             if (CurrentStatus != PhoneStatus.Outgoing) return;
 
             _sound.Stop();
-            _targetConnectionId = responderId;
-            await StartVoiceTransmission(_targetConnectionId);
+            await StartVoiceTransmission();
 
             CurrentStatus  = PhoneStatus.Talking;
             CallStartTime  = DateTime.Now;
@@ -370,12 +365,12 @@ namespace Tatehama_tetuden.Services
             StatusChanged?.Invoke(CurrentStatus);
         }
 
-        private async Task StartVoiceTransmission(string targetId)
+        private async Task StartVoiceTransmission()
         {
             int inDev = -1, outDevId = -1;
             if (_currentInputDevice != null)  int.TryParse(_currentInputDevice.ID,  out inDev);
             if (_normalOutputDevice != null)  int.TryParse(_normalOutputDevice.ID,  out outDevId);
-            await _voice.StartTransmission(_myConnectionId ?? "", targetId, inDev, outDevId);
+            await _voice.StartTransmission(inDev, outDevId);
         }
 
         private async Task EndCallInternal(bool sendSignal, bool playSound)
@@ -391,7 +386,6 @@ namespace Tatehama_tetuden.Services
             await _voice.StopTransmission();
 
             _connectedTargetNumber = null;
-            _targetConnectionId    = null;
             IsHolding              = false;
             IsMyHold               = false;
             _isRemoteHold          = false;

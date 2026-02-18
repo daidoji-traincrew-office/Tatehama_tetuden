@@ -89,7 +89,7 @@ public class CallServiceTests
     {
         var statusEvents = CaptureStatusEvents();
 
-        SimulateIncomingCall("101", "caller-abc");
+        SimulateIncomingCall("101");
 
         Assert.Contains(PhoneStatus.Incoming, statusEvents);
         _mockSound.Verify(s => s.Play(SoundName.Yobi1, true, 1000), Times.Once);
@@ -100,9 +100,9 @@ public class CallServiceTests
     {
         await SetupTalkingState();
 
-        SimulateIncomingCall("102", "caller-xyz");
+        SimulateIncomingCall("102");
 
-        _mockSignaling.Verify(s => s.SendBusy("caller-xyz"), Times.Once);
+        // 通話中の着信は無視される（Busy応答はサーバー側で処理）
         Assert.Equal(PhoneStatus.Talking, _sut.CurrentStatus);
     }
 
@@ -111,14 +111,13 @@ public class CallServiceTests
     [Fact]
     public async Task AnswerCall_着信中_Talkingに遷移し_音声開始される()
     {
-        SimulateIncomingCall("101", "caller-abc");
+        SimulateIncomingCall("101");
         var statusEvents = CaptureStatusEvents();
 
         await _sut.AnswerCall();
 
         Assert.Contains(PhoneStatus.Talking, statusEvents);
         _mockVoice.Verify(v => v.StartTransmission(
-            It.IsAny<string>(), "caller-abc",
             It.IsAny<int>(), It.IsAny<int>()), Times.Once);
     }
 
@@ -133,18 +132,18 @@ public class CallServiceTests
         await _sut.EndCall();
 
         Assert.Contains(PhoneStatus.Idle, statusEvents);
-        _mockSignaling.Verify(s => s.SendHangup(It.IsAny<string>()), Times.Once);
+        _mockSignaling.Verify(s => s.SendHangup(), Times.Once);
         _mockVoice.Verify(v => v.StopTransmission(), Times.Once);
     }
 
     [Fact]
     public async Task EndCall_着信中_Rejectが送られる()
     {
-        SimulateIncomingCall("101", "caller-abc");
+        SimulateIncomingCall("101");
 
         await _sut.EndCall();
 
-        _mockSignaling.Verify(s => s.SendReject("caller-abc"), Times.Once);
+        _mockSignaling.Verify(s => s.SendReject(), Times.Once);
     }
 
     // ─── ミュート・スピーカー・保留 ────────────────────────
@@ -178,7 +177,7 @@ public class CallServiceTests
 
         Assert.True(_sut.IsMyHold);
         Assert.True(_sut.IsHolding);
-        _mockSignaling.Verify(s => s.SendHold(It.IsAny<string>()), Times.Once);
+        _mockSignaling.Verify(s => s.SendHold(), Times.Once);
         _mockSound.Verify(s => s.Play(SoundName.Hold1, true, 0), Times.Once);
     }
 
@@ -192,7 +191,7 @@ public class CallServiceTests
 
         Assert.False(_sut.IsMyHold);
         Assert.False(_sut.IsHolding);
-        _mockSignaling.Verify(s => s.SendResume(It.IsAny<string>()), Times.Once);
+        _mockSignaling.Verify(s => s.SendResume(), Times.Once);
     }
 
     // ─── 電話帳検索 ──────────────────────────────────────────
@@ -220,9 +219,9 @@ public class CallServiceTests
     // ─── ヘルパー ────────────────────────────────────────────
 
     /// <summary>IncomingCallReceived イベントを発火させる</summary>
-    private void SimulateIncomingCall(string fromNumber, string callerId)
+    private void SimulateIncomingCall(string fromNumber)
     {
-        _mockSignaling.Raise(s => s.IncomingCallReceived += null, fromNumber, callerId);
+        _mockSignaling.Raise(s => s.IncomingCallReceived += null, fromNumber);
     }
 
     /// <summary>StatusChanged イベントを記録するリストを返す</summary>
@@ -237,7 +236,7 @@ public class CallServiceTests
     private async Task SetupTalkingState()
     {
         _mockSignaling.SetupGet(s => s.IsConnected).Returns(true);
-        SimulateIncomingCall("101", "caller-abc");
+        SimulateIncomingCall("101");
         await _sut.AnswerCall();
     }
 }

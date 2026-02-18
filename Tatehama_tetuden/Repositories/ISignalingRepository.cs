@@ -9,14 +9,14 @@ public interface ISignalingRepository : IDisposable, IAsyncDisposable
     Task<bool> ConnectAsync();
     Task SendLogin(string myNumber);
     Task<CallResponse> SendCall(string targetNumber);
-    Task<AnswerResponse> SendAnswer();
+    Task SendAnswer();
     Task SendReject();
     Task SendHangup();
     Task SendHold();
     Task SendResume();
 
     event Action<string>  IncomingCallReceived;
-    event Action<string>  AnswerReceived;
+    event Action          AnswerReceived;
     event Action          HangupReceived;
     event Action          CancelReceived;
     event Action          RejectReceived;

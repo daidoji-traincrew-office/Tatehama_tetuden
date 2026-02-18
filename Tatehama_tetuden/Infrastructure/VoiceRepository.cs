@@ -24,21 +24,16 @@ public class VoiceRepository(ILogger<VoiceRepository> logger, IAuthenticationRep
 
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
-    private string? _myId;
-    private string? _targetId;
     private volatile bool _isActive = false;
 
     public bool IsMuted { get; set; } = false;
 
-    public async Task StartTransmission(string myId, string targetId, int inputDevId, int outputDevId)
+    public async Task StartTransmission(int inputDevId, int outputDevId)
     {
         if (_isActive) await StopTransmission();
 
         // トークンを内部で取得
         string? accessToken = auth.GetAccessToken();
-
-        _myId = myId;
-        _targetId = targetId;
 
         InitAudio(inputDevId, outputDevId);
 
@@ -126,8 +121,6 @@ public class VoiceRepository(ILogger<VoiceRepository> logger, IAuthenticationRep
             {
                 await _call.RequestStream.WriteAsync(new VoiceData
                 {
-                    ClientId = _myId!,
-                    TargetId = _targetId!,
                     AudioContent = Google.Protobuf.ByteString.CopyFrom(encoded)
                 });
             }

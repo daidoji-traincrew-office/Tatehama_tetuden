@@ -13,7 +13,5 @@ service VoiceRelay {
 
 // 音声データパケット
 message VoiceData {
-  string client_id = 1;      // 送信者のID (SignalRのConnectionIDなどを流用)
-  string target_id = 2;      // 送信先のID
-  bytes audio_content = 3;   // 音声データ (MuLaw圧縮済みバイト列)
+  bytes audio_content = 1;   // 音声データ (MuLaw圧縮済みバイト列)
 }

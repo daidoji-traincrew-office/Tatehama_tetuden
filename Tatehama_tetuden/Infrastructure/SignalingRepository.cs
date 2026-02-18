@@ -12,7 +12,7 @@ public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthentic
     private bool _isManuallyDisconnecting = false;
 
     public event Action<string>?  IncomingCallReceived;
-    public event Action<string>?  AnswerReceived;
+    public event Action?          AnswerReceived;
     public event Action?          HangupReceived;
     public event Action?          CancelReceived;
     public event Action?          RejectReceived;
@@ -90,9 +90,9 @@ public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthentic
             catch (Exception ex) { logger.LogError(ex, "ReceiveIncoming処理中にエラー発生"); }
         });
 
-        _hubConnection!.On<string>("ReceiveAnswered", (responderId) =>
+        _hubConnection!.On("ReceiveAnswered", () =>
         {
-            try { AnswerReceived?.Invoke(responderId); }
+            try { AnswerReceived?.Invoke(); }
             catch (Exception ex) { logger.LogError(ex, "ReceiveAnswered処理中にエラー発生"); }
         });
 
@@ -133,10 +133,9 @@ public class SignalingRepository(ILogger<SignalingRepository> logger, IAuthentic
         if (IsConnected) return await _hubConnection!.InvokeAsync<CallResponse>("Call", targetNumber);
         return new CallResponse(false);
     }
-    public async Task<AnswerResponse> SendAnswer()
+    public async Task SendAnswer()
     {
-        if (IsConnected) return await _hubConnection!.InvokeAsync<AnswerResponse>("Answer");
-        return new AnswerResponse("", "");
+        if (IsConnected) await _hubConnection!.InvokeAsync("Answer");
     }
     public async Task SendReject()  { if (IsConnected) await _hubConnection!.InvokeAsync("Reject"); }
     public async Task SendHangup()  { if (IsConnected) await _hubConnection!.InvokeAsync("Hangup"); }
