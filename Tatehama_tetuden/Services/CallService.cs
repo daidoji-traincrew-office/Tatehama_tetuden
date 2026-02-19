@@ -138,10 +138,11 @@ namespace Tatehama_tetuden.Services
             OnlineStateChanged?.Invoke(IsOnline);
         }
 
-        public void UpdateAudioDevices(DeviceInfo? input, DeviceInfo? normalOut)
+        public void UpdateAudioDevices(DeviceInfo? input, DeviceInfo? normalOut, DeviceInfo? speakerOut = null)
         {
             _currentInputDevice = input;
             _normalOutputDevice = normalOut;
+            _speakerOutputDevice = speakerOut;
             _sound.SetOutputDevice(normalOut?.ID);
         }
 

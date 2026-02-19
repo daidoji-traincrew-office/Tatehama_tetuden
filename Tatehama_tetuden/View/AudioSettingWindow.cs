@@ -22,6 +22,9 @@ namespace Tatehama_tetuden.View
         /// <summary>選択された出力デバイス（スピーカー）</summary>
         public DeviceInfo SelectedOutput { get; private set; }
 
+        /// <summary>選択されたスピーカー出力デバイス（拡声）</summary>
+        public DeviceInfo SelectedSpeakerOutput { get; private set; }
+
         /// <summary>設定された入力音量倍率 (0.0 ~ 2.0)</summary>
         public float InputVolume { get; private set; }
 
@@ -34,6 +37,7 @@ namespace Tatehama_tetuden.View
 
         private ComboBox _inputCombo;
         private ComboBox _outputCombo;
+        private ComboBox _speakerCombo;
         private Slider _inputVolSlider;
         private Slider _outputVolSlider;
         private TextBlock _inputVolText;
@@ -72,7 +76,7 @@ namespace Tatehama_tetuden.View
         /// <param name="currentOutput">現在の出力デバイス</param>
         /// <param name="inVol">現在の入力音量</param>
         /// <param name="outVol">現在の出力音量</param>
-        public AudioSettingWindow(DeviceInfo currentInput, DeviceInfo currentOutput, float inVol, float outVol, List<DeviceInfo>? inputDevices = null, List<DeviceInfo>? outputDevices = null)
+        public AudioSettingWindow(DeviceInfo currentInput, DeviceInfo currentOutput, float inVol, float outVol, List<DeviceInfo>? inputDevices = null, List<DeviceInfo>? outputDevices = null, DeviceInfo? currentSpeakerOutput = null)
         {
             // --- ウィンドウの基本設定 ---
             Title = "音声設定";
@@ -93,7 +97,7 @@ namespace Tatehama_tetuden.View
             InitializeUi();
 
             // --- デバイス情報の読み込み ---
-            LoadDevices(currentInput, currentOutput, inputDevices, outputDevices);
+            LoadDevices(currentInput, currentOutput, inputDevices, outputDevices, currentSpeakerOutput);
         }
 
         #region UI構築ロジック
@@ -132,6 +136,11 @@ namespace Tatehama_tetuden.View
             _outputCombo = CreateComboBox();
             _outputCombo.SelectionChanged += (s, e) => StopTest();
             devicePanel.Children.Add(_outputCombo);
+
+            // スピーカー出力（拡声）選択
+            devicePanel.Children.Add(CreateLabel("スピーカー出力 (拡声):"));
+            _speakerCombo = CreateComboBox();
+            devicePanel.Children.Add(_speakerCombo);
 
             root.Children.Add(CreateCard("デバイス選択", devicePanel));
 
@@ -283,6 +292,7 @@ namespace Tatehama_tetuden.View
                 StopTest();
                 SelectedInput = _inputCombo.SelectedItem as DeviceInfo;
                 SelectedOutput = _outputCombo.SelectedItem as DeviceInfo;
+                SelectedSpeakerOutput = _speakerCombo.SelectedItem as DeviceInfo;
                 DialogResult = true; // 成功として閉じる
             };
 
@@ -354,7 +364,7 @@ namespace Tatehama_tetuden.View
         /// <summary>
         /// 利用可能なオーディオデバイスを読み込み、コンボボックスに設定します。
         /// </summary>
-        private void LoadDevices(DeviceInfo currentInput, DeviceInfo currentOutput, List<DeviceInfo>? inputDevices, List<DeviceInfo>? outputDevices)
+        private void LoadDevices(DeviceInfo currentInput, DeviceInfo currentOutput, List<DeviceInfo>? inputDevices, List<DeviceInfo>? outputDevices, DeviceInfo? currentSpeakerOutput = null)
         {
             try
             {
@@ -383,6 +393,17 @@ namespace Tatehama_tetuden.View
                 }
                 if (_outputCombo.SelectedIndex < 0 && _outputCombo.Items.Count > 0)
                     _outputCombo.SelectedIndex = 0;
+
+                // スピーカー出力（拡声）デバイスの列挙
+                _speakerCombo.Items.Clear();
+                foreach (var item in outputs)
+                {
+                    _speakerCombo.Items.Add(item);
+                    if (currentSpeakerOutput != null && item.ID == currentSpeakerOutput.ID)
+                        _speakerCombo.SelectedItem = item;
+                }
+                if (_speakerCombo.SelectedIndex < 0 && _speakerCombo.Items.Count > 0)
+                    _speakerCombo.SelectedIndex = 0;
             }
             catch (Exception ex)
             {

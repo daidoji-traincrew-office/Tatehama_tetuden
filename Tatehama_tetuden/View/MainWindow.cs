@@ -28,6 +28,7 @@ namespace Tatehama_tetuden.View
         // デバイス・音量（設定画面と連携するためView側に残す）
         private DeviceInfo? _currentInputDevice;
         private DeviceInfo? _normalOutputDevice;
+        private DeviceInfo? _speakerOutputDevice;
         private float _currentInputVol = 1.0f;
         private float _currentOutputVol = 1.0f;
 
@@ -114,9 +115,9 @@ namespace Tatehama_tetuden.View
 
             _currentInputDevice = inputDevices.Count > 0 ? inputDevices[0] : null;
             _normalOutputDevice = outputDevices.Count > 0 ? outputDevices[0] : null;
-            var speakerOutputDevice = new DeviceInfo { ID = "-1", Name = "既定のスピーカー" };
+            _speakerOutputDevice = outputDevices.Count > 0 ? outputDevices[0] : null;
 
-            _callService.Initialize(station, _currentInputDevice, _normalOutputDevice, speakerOutputDevice);
+            _callService.Initialize(station, _currentInputDevice, _normalOutputDevice, _speakerOutputDevice);
             await _callService.ConnectAsync();
         }
 
@@ -225,7 +226,19 @@ namespace Tatehama_tetuden.View
 
         private void UpdateButtonVisuals()
         {
-            void Set(Button b, bool active) { if (b == null) return; b.Background = active ? _btnActiveBg : _btnInactiveBg; }
+            void Set(Button b, bool active)
+            {
+                if (b == null) return;
+                b.Background = active ? _btnActiveBg : _btnInactiveBg;
+                if (b.Content is StackPanel sp)
+                {
+                    var fg = active ? _btnActiveFg : _btnInactiveFg;
+                    foreach (var child in sp.Children)
+                    {
+                        if (child is TextBlock tb) tb.Foreground = fg;
+                    }
+                }
+            }
             Set(_muteBtn, _callService.IsMuted);
             Set(_speakerBtn, _callService.IsSpeakerOn);
             if (_holdBtn != null)
@@ -263,15 +276,16 @@ namespace Tatehama_tetuden.View
         {
             var inputDevices = _audioDeviceRepo.GetInputDevices();
             var outputDevices = _audioDeviceRepo.GetOutputDevices();
-            var win = new AudioSettingWindow(_currentInputDevice, _normalOutputDevice, _currentInputVol, _currentOutputVol, inputDevices, outputDevices);
+            var win = new AudioSettingWindow(_currentInputDevice, _normalOutputDevice, _currentInputVol, _currentOutputVol, inputDevices, outputDevices, _speakerOutputDevice);
             win.Owner = this;
             if (win.ShowDialog() == true)
             {
                 _currentInputDevice  = win.SelectedInput;
                 _normalOutputDevice  = win.SelectedOutput;
+                _speakerOutputDevice = win.SelectedSpeakerOutput;
                 _currentInputVol     = win.InputVolume;
                 _currentOutputVol    = win.OutputVolume;
-                _callService.UpdateAudioDevices(win.SelectedInput, win.SelectedOutput);
+                _callService.UpdateAudioDevices(win.SelectedInput, win.SelectedOutput, win.SelectedSpeakerOutput);
             }
         }
 
