@@ -64,7 +64,7 @@ namespace Tatehama_tetuden
                                 options.AddRegistration(new OpenIddictClientRegistration
                                 {
                                     Issuer = new Uri(ServerAddress.SignalAddress, UriKind.Absolute), // サーバーURL
-                                    ClientId = "railway-phone-client",
+                                    ClientId = "MultiATS_Client",
                                     RedirectUri = new Uri("/", UriKind.Relative)
                                 });
                             });
@@ -85,6 +85,16 @@ namespace Tatehama_tetuden
                         services.AddTransient<MainWindow>();
                     })
                     .Build();
+
+                // ホスト起動（OpenIddict の SystemIntegration hosted service を含む）
+                await _host.StartAsync();
+
+                // SQLite DB の初期化（OpenIddict が使用するテーブルを作成）
+                await using (var scope = _host.Services.CreateAsyncScope())
+                {
+                    var db = scope.ServiceProvider.GetRequiredService<DbContext>();
+                    await db.Database.EnsureCreatedAsync();
+                }
 
                 // 認証とウィンドウ表示の処理
                 await InitializeApplicationAsync();
